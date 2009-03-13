@@ -1,0 +1,76 @@
+\name{WriteXLS}
+\alias{WriteXLS}
+\title{Cross-platform Perl based R function to create Excel (XLS) files}
+\description{Writes one or more R data frames to an Excel file}
+\usage{
+  WriteXLS(x, ExcelFileName = "R.xls", perl = "perl")
+}
+\arguments{
+  \item{x}{A character vector containing the names of one or more R 
+   data frames to be exported to the Excel file.}
+  \item{ExcelFileName}{The name of the Excel file to be created.
+   Must be a valid Excel filename. May include an existing path.}
+  \item{perl}{Name of the perl executable to be called.}
+}
+\details{
+  This function takes a character vector containing the names of one or
+  more R data frames and writes them to an Excel spreadsheet file. Each
+  data frame will be written to a separate worksheet in the Excel file.
+  Each worksheet will be named using the name of the data frame (up to the
+  first 31 characters, which is an Excel limitation). It is therefore possible
+  that if two data frames have the same name up to the 31st character, the 
+  corresponding worksheets in the Excel file will have the same name.
+
+  The data frame column names will be exported "as is" and will be the first 
+  row in the corresponding worksheet.
+
+  The data frame row names will NOT be exported.
+
+  UTF-8 encoded content in the data frame should be properly exported using
+  the Perl \code{Encode} module by default.
+
+  There is an intermediate step, where the R data frames are first written
+  to CSV files using \code{write.table} before being written
+  to the Excel file. \code{tempdir} is used to determine the 
+  current R session temporary directory and a new sub-directory called "WriteXLS"
+  will be created there. The CSV files will be written to that directory and
+  both the files and the directory will be deleted prior to the function
+  terminating normally using \code{on.exit}. It is possible that these 
+  will remain in place if this function terminates abnormally or is aborted
+  prior to completion.
+
+  All of the CSV files will be created prior to the creation of the Excel file
+  as the Perl script will loop over them as part of the process. Thus, 
+  sufficient free disk space must be available for these files and the Excel
+  file at the same time.
+}
+\value{
+  None}
+\note{A working installed version of Perl must be present in the current 
+  system searchpath or the exact path of the perl executable
+  must be provided via the \code{perl} argument.
+  Perl modules required for this function that may not be part of a default
+  Perl installation are included with this package. These modules include:
+
+  OLE::Storage\_Lite, Parse::RecDescent and Spreadsheet::WriteExcel
+}
+\author{Marc Schwartz \email{marcs\_schwartz@me.com}}
+\references{
+  Spreadsheet::WriteExcel Perl Module \url{http://search.cpan.org/dist/Spreadsheet-WriteExcel}
+
+  Excel 2007 Specifications and Limitations \url{http://office.microsoft.com/en-us/excel/HP100738491033.aspx}
+
+  For Perl Unicode Issues \url{http://www.ahinea.com/en/tech/perl-unicode-struggle.html}
+}
+\seealso{\code{\link[base]{write.table}} }
+\examples{
+  \dontrun{
+
+   # Examples using built-in data frames 
+   WriteXLS("iris", "iris.xls")
+
+   WriteXLS(c("iris", "infert", "esoph"), "Example.xls")
+
+  } 
+}
+\keyword{file}
