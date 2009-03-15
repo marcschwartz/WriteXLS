@@ -52,7 +52,7 @@
   Perl modules required for this function that may not be part of a default
   Perl installation are included with this package. These modules include:
 
-  OLE::Storage\_Lite, Parse::RecDescent and Spreadsheet::WriteExcel
+  OLE::Storage\_Lite, Text::CSV\_XS, Parse::RecDescent and Spreadsheet::WriteExcel
 }
 \author{Marc Schwartz \email{marcs\_schwartz@me.com}}
 \references{
@@ -64,13 +64,13 @@
 }
 \seealso{\code{\link[base]{write.table}} }
 \examples{
-  \dontrun{
+  # Examples using built-in data frames 
+  WriteXLS("iris", "iris.xls")
 
-   # Examples using built-in data frames 
-   WriteXLS("iris", "iris.xls")
+  WriteXLS(c("iris", "infert", "esoph"), "Example.xls")
 
-   WriteXLS(c("iris", "infert", "esoph"), "Example.xls")
-
-  } 
+  # Clean up and delete XLS files
+  unlink("iris.xls")
+  unlink("Example.xls")
 }
 \keyword{file}
