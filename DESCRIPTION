@@ -1,6 +1,6 @@
 Package: WriteXLS
-Version: 1.0.0
-Date: 2009-02-15
+Version: 1.1.0
+Date: 2009-03-15
 Title: Cross-platform Perl based R function to create Excel (XLS) files
 Description: Cross-platform perl based R function to create Excel (XLS)
              files from one or more data frames. Each data frame will be
@@ -9,3 +9,5 @@ Description: Cross-platform perl based R function to create Excel (XLS)
 Author: Marc Schwartz <marc_schwartz@me.com>
 Maintainer: Marc Schwartz <marc_schwartz@me.com>
 License: GPL (>=2)
+SystemRequirements: Perl
+
