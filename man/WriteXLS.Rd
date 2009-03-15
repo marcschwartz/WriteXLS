@@ -52,7 +52,8 @@
   Perl modules required for this function that may not be part of a default
   Perl installation are included with this package. These modules include:
 
-  OLE::Storage\_Lite, Text::CSV\_XS, Parse::RecDescent and Spreadsheet::WriteExcel
+  OLE::Storage\_Lite, Text::CSV\_XS, Parse::RecDescent, Getopt::Long,
+  File::Glob, File::Basename and Spreadsheet::WriteExcel
 }
 \author{Marc Schwartz \email{marcs\_schwartz@me.com}}
 \references{
