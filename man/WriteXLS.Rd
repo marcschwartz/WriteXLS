@@ -52,8 +52,12 @@
   Perl modules required for this function that may not be part of a default
   Perl installation are included with this package. These modules include:
 
-  OLE::Storage\_Lite, Text::CSV\_XS, Parse::RecDescent, Getopt::Long,
+  OLE::Storage\_Lite, Parse::RecDescent, Getopt::Long,
   File::Glob, File::Basename and Spreadsheet::WriteExcel
+
+  Note that the required Perl module Text::CSV\_XS is not included with this
+  package. As an 'XS' package, it is platform specific, requiring local 
+  installation from CPAN or your OS package manager.
 }
 \author{Marc Schwartz \email{marcs\_schwartz@me.com}}
 \references{
