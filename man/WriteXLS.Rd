@@ -59,7 +59,11 @@
   with this package.  They platform specific, requiring local installation from CPAN
   or via your OS package manager.
 }
-\author{Marc Schwartz \email{marcs\_schwartz@me.com}}
+\author{
+  Marc Schwartz \email{marcs\_schwartz@me.com}
+
+  Many thanks to Prof. Brian Ripley for his assistance in the testing of this package. 
+}
 \references{
   Spreadsheet::WriteExcel Perl Module \url{http://search.cpan.org/dist/Spreadsheet-WriteExcel}
 

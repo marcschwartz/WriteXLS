@@ -57,6 +57,11 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", perl = "perl")
 
   # Call Perl script
   cmd <- paste(perl, " -I", Perl.Path, " ", Fn.Path, " --CSVPath ", Tmp.Dir, " ", ExcelFileName, sep = "")
-  system(cmd)
-}
 
+  # Call the external Perl script and get the result of the call
+  Result <- system(cmd)
+
+  # Check to see if Result != 0 in the case of the failure of the Perl script
+  # This should also raise an error for R CMD check for package testing on R-Forge and CRAN
+  if (Result != 0) stop("The Perl script 'WriteXLS.pl' failed to run successfully.")
+}
