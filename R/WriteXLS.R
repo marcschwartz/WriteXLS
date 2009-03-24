@@ -11,7 +11,7 @@
 
 
 
-WriteXLS <- function(x, ExcelFileName = "R.xls", perl = "perl")
+WriteXLS <- function(x, ExcelFileName = "R.xls", perl = "perl", verbose = FALSE)
 {
   # Check to be sure that each 'x' is a data frame
   if (!all(sapply(x, function(i) is.data.frame(get(as.character(i))))))
@@ -27,7 +27,9 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", perl = "perl")
   # Remove Tmp.Dir and Files
   clean.up <- function()
   {
-    cat("Cleaning Up Temporary Files and Directory\n\n")
+    if (verbose)
+      cat("Cleaning Up Temporary Files and Directory\n\n")
+
     unlink(Tmp.Dir, recursive = TRUE)
   }
 
@@ -37,26 +39,33 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", perl = "perl")
   # Cleanup now, in case Tmp.Dir still exists from a prior run
   if (file.exists(Tmp.Dir))
   {
-    cat("Cleaning Up Temporary Files and Directory From Prior Run\n\n")
+    if (verbose)
+      cat("Cleaning Up Temporary Files and Directory From Prior Run\n\n")
+    
     unlink(Tmp.Dir, recursive = TRUE)
   }
 
   # Create Tmp.Dir for new run
-  cat("Creating Temporary Directory for CSV Files: ", Tmp.Dir, "\n\n")
+  if (verbose)
+    cat("Creating Temporary Directory for CSV Files: ", Tmp.Dir, "\n\n")
+  
   dir.create(Tmp.Dir, recursive = TRUE)
 
   #  Write Comma Delimited CSV files
   for (i in as.character(x))
   {
-    cat("Creating CSV File: ", i, "\n")
+    if (verbose)
+      cat("Creating CSV File: ", i, "\n")
+   
     write.table(get(i), file = paste(Tmp.Dir, "/", i, ".csv", sep = ""),
                 sep = ",", quote = TRUE, na = "", row.names = FALSE)
   }
 
-  cat("\n")
+  if (verbose)
+    cat("\n")
 
   # Call Perl script
-  cmd <- paste(perl, " -I", Perl.Path, " ", Fn.Path, " --CSVPath ", Tmp.Dir, " ", ExcelFileName, sep = "")
+  cmd <- paste(perl, " -I", Perl.Path, " ", Fn.Path, " --CSVPath ", Tmp.Dir, " --verbose ", verbose, " ", ExcelFileName, sep = "")
 
   # Call the external Perl script and get the result of the call
   Result <- system(cmd)

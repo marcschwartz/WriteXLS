@@ -1,9 +1,9 @@
 \name{WriteXLS}
 \alias{WriteXLS}
-\title{Cross-platform Perl based R function to create Excel (XLS) files}
+\title{Cross-platform Perl based R function to create Excel 2003 (XLS) files}
 \description{Writes one or more R data frames to an Excel file}
 \usage{
-  WriteXLS(x, ExcelFileName = "R.xls", perl = "perl")
+  WriteXLS(x, ExcelFileName = "R.xls", perl = "perl", verbose = FALSE)
 }
 \arguments{
   \item{x}{A character vector containing the names of one or more R 
@@ -11,10 +11,12 @@
   \item{ExcelFileName}{The name of the Excel file to be created.
    Must be a valid Excel filename. May include an existing path.}
   \item{perl}{Name of the perl executable to be called.}
+  \item{verbose}{Output step-by-step status messages during the creation
+        of the Excel file. Default is FALSE.}
 }
 \details{
   This function takes a character vector containing the names of one or
-  more R data frames and writes them to an Excel spreadsheet file. Each
+  more R data frames and writes them to an Excel 2003 spreadsheet file. Each
   data frame will be written to a separate worksheet in the Excel file.
   Each worksheet will be named using the name of the data frame (up to the
   first 31 characters, which is an Excel limitation). It is therefore possible
@@ -67,7 +69,7 @@
 \references{
   Spreadsheet::WriteExcel Perl Module \url{http://search.cpan.org/dist/Spreadsheet-WriteExcel}
 
-  Excel 2007 Specifications and Limitations \url{http://office.microsoft.com/en-us/excel/HP100738491033.aspx}
+  Excel 2003 Specifications and Limitations \url{http://office.microsoft.com/en-us/excel/HP051992911033.aspx}
 
   For Perl Unicode Issues \url{http://www.ahinea.com/en/tech/perl-unicode-struggle.html}
 }

@@ -12,13 +12,17 @@
 # Public License Version 2, June 1991.  
 
 
-# Called as: WriteXLS.pl [--CSVpath] [--CSVfiles] ExcelFileName
+# Called as: WriteXLS.pl [--CSVpath] [--CSVfiles] [--verbose] ExcelFileName
+
+# CSVpath = Path to CSV Files. Defaults to '.'
+# CSVfiles = Names of CSV Files to use. Defaults to '*.csv'
+# verbose = Output status messages. TRUE or FALSE. Defaults to FALSE
 
 # Spreadsheet::WriteExcel 
 # http://search.cpan.org/~jmcnamara/Spreadsheet-WriteExcel/lib/Spreadsheet/WriteExcel.pm
 
-# Excel 2007 specifications and limitations
-# http://office.microsoft.com/en-us/excel/HP100738491033.aspx
+# Excel 2003 specifications and limitations
+# http://office.microsoft.com/en-us/excel/HP051992911033.aspx
 
 # For unicode issues:
 # http://www.ahinea.com/en/tech/perl-unicode-struggle.html
@@ -36,15 +40,20 @@ use Encode;
 # Initialize and get command line arguments
 my $CSVPath = '.';
 my $CSVFiles = "*.csv";
+my $verbose = "FALSE";
 
 GetOptions ('CSVpath=s' => \$CSVPath, 
-            'CSVfiles=s' => \$CSVFiles);
+            'CSVfiles=s' => \$CSVFiles,
+            'verbose=s' => \$verbose);
 
 my $ExcelFileName = $ARGV[0];
 
 
 # Create Excel XLS File
-print "Creating Excel File: $ExcelFileName\n\n";
+if ($verbose eq "TRUE") {
+  print "Creating Excel File: $ExcelFileName\n\n";
+}
+
 my $XLSFile  = Spreadsheet::WriteExcel->new($ExcelFileName);
 
 
@@ -54,7 +63,9 @@ my @FileNames = <$CSVPath/$CSVFiles>;
 
 foreach my $FileName (@FileNames) {
 
-  print "Reading: $FileName\n";
+  if ($verbose eq "TRUE") {
+    print "Reading: $FileName\n";
+  }
 
   # Open CSV File
   my $csv = Text::CSV_XS->new ({ binary => 1 });
@@ -68,7 +79,9 @@ foreach my $FileName (@FileNames) {
   # limit for a worksheet name
   my $SheetName = substr($FName, 0, 31);
 
-  print "Creating New WorkSheet: $SheetName\n\n";
+  if ($verbose eq "TRUE") {
+    print "Creating New WorkSheet: $SheetName\n\n";
+  }
 
   my $WorkSheet = $XLSFile->add_worksheet($SheetName);
 
