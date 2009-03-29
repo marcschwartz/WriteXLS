@@ -47,8 +47,17 @@
   file at the same time.
 }
 \value{
-  None}
-\note{A working installed version of Perl must be present in the current 
+  None
+}
+\note{
+  Please be sure to read the included INSTALL file (in the main package installation 
+  directory) for additional details on meeting the requirements for Perl and the 
+  additional Perl modules that are necessary for this function to work properly. The file
+  includes platform specific recommendations for common scenarios. The path to the package
+  installation directory can be located using \code{.path.package("WriteXLS")} after using
+  \code{library(WriteXLS)}.
+
+  A working installed version of Perl must be present in the current 
   system searchpath or the exact path of the perl executable
   must be provided via the \code{perl} argument.
   Perl modules required for this function that may not be part of a default
@@ -60,6 +69,9 @@
   Note that the required Perl modules Encode, File::Glob and Text::CSV\_XS are not included
   with this package.  They are platform specific, requiring local compilation and installation 
   from CPAN or via your OS package manager.
+
+  To test your Perl installation and verify that all required Perl modules are available,
+  use the \code{testPerl} function provided in this package.
 }
 \author{
   Marc Schwartz \email{marcs\_schwartz@me.com}
@@ -73,15 +85,21 @@
 
   For Perl Unicode Issues \url{http://www.ahinea.com/en/tech/perl-unicode-struggle.html}
 }
-\seealso{\code{\link[base]{write.table}} }
+\seealso{
+  \code{\link[base]{write.table}} and \code{\link[WriteXLS]{testPerl}}
+}
 \examples{
-  # Examples using built-in data frames 
-  WriteXLS("iris", "iris.xls")
+  # Only run the examples if Perl and all modules are present
+  if (testPerl())
+  {
+    # Examples using built-in data frames 
+    WriteXLS("iris", "iris.xls")
 
-  WriteXLS(c("iris", "infert", "esoph"), "Example.xls")
+    WriteXLS(c("iris", "infert", "esoph"), "Example.xls")
 
-  # Clean up and delete XLS files
-  unlink("iris.xls")
-  unlink("Example.xls")
+    # Clean up and delete XLS files
+    unlink("iris.xls")
+    unlink("Example.xls")
+  }
 }
 \keyword{file}

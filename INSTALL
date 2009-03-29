@@ -1,0 +1,210 @@
+INSTALLING PERL AND RELATED MODULES TO USE WriteXLS
+March 29, 2009
+
+
+BASIC REQUIREMENTS
+
+1. A working version of Perl (http://www.perl.org/)
+
+2. The following Perl modules:
+
+  OLE::Storage_Lite
+  Parse::RecDescent
+  Getopt::Long
+  File::Basename
+  Spreadsheet::WriteExcel
+  Encode
+  File::Glob
+  Text::CSV_XS
+
+
+GENERAL COMMENTS
+
+Some or all of these modules may be installed with recent Perl distributions. For example,
+ActiveState's Perl distributions (http://www.activestate.com/activeperl/) version 5.8.8.x 
+(Build 824 or later) and version 5.10.x (Build 1003 or later) contain all of the required
+Perl modules, with the default installation.
+
+Other Perl distributions, such as Strawberry Perl for Windows, Apple's Perl installation
+on OSX and others do not have all required modules in their default installation. Thus, one will
+need to install any missing Perl modules from the above list using operating system and Perl 
+distribution specific actions.
+
+With the exception of the last three modules, all other modules are included with the WriteXLS
+CRAN package and should be used if not otherwise installed on your system.
+
+It is rather important to note, that the last three modules in the list (Encode, File::Glob and
+Text::CSV_XS) are not "Pure Perl" modules and are therefore not included with WriteXLS. They 
+have been written in such a way as to call external C code. They are therefore operating system
+and Perl version specific. More information on 'XS' Perl modules is available here:
+
+  http://en.wikipedia.org/wiki/XS_(Perl)
+
+It is my experience, that of the three, Encode and File::Glob seem to be part of most
+default Perl installations. 
+
+Text::CSV_XS seems to be the one most likely to require separate installation, again, with the
+exception of ActiveState Perl, as noted above. Thus, in most cases, this may be the only Perl
+module that you will need to install beyond what is already provided in your Perl installation
+and the WriteXLS package. 
+
+If you are missing any of these three modules and need to install them from CPAN 
+(http://www.cpan.org/) from source, as opposed to having access to pre-compiled versions, such 
+as is available from ActiveState or on some Linux distributions, you will also need to have
+a C compiler and related building tools (eg. make, tar, etc.) available on your system. The build
+process for these Perl modules from source code, involves compiling both the Perl and the C code
+included. In addition, Perl versions are not binary compatible, even on the same operating 
+system. Thus, if for example, you should compile these modules using Perl version 5.8.x and then
+try to run them with Perl 5.10.x, you will almost certainly experience errors, likely manifesting
+themselves as version conflicts or the like. This can be a problem, if you should have more
+than one version of Perl installed on your system or upgrade from one to another.
+
+
+TESTING YOUR PERL INSTALLATION
+
+A function, testPerl(), has been provided in this package to check for Perl and the required Perl
+modules. If you have any questions as to whether or not your Perl installation is sufficient to support
+WriteXLS(), please use this function. If Perl or any of the required modules are missing, this function
+will provide a list of them. 
+
+
+OPERATING SYSTEM SPECIFIC RECOMMENDATIONS
+
+Below are some recommendations for common scenarios on the 3 major operating systems in use 
+for R to get you up and running with WriteXLS as easily as possible.
+
+Be aware, that depending upon the nature of your working computer environment, you may
+need to seek the assistance of a System Administrator, who has full access rights to your
+computer in order to install third party software. You may also be restricted by any local
+computer use policies that affect the software that you can install and use.
+
+
+WINDOWS
+
+As has been noted above and as of this writing, the easiest way to install Perl is to use the 
+ActiveState Perl distribution from: 
+
+  http://www.activestate.com/activeperl/
+
+If this is the only Perl installation on your computer, that should be all that you need to then
+run WriteXLS. The ActiveState installer should also modify your $PATH to enable you to easily run
+Perl. To verify this, within a Windows Command Terminal, run:
+
+  perl -v
+
+to check to be sure that ActiveState Perl is run and to verify the version and build number 
+information. 
+
+Thus, the easiest installation for WriteXLS on Windows is a two step process:
+
+1. Install the WriteXLS binary from CRAN (.zip file)
+2. Install ActiveState Perl
+
+Be sure to start a new R session after the installation of ActiveState, so that the $PATH for the 
+session is correct.
+
+If you should have another version of Perl installed (for example the RTools package provided by
+Duncan Murdoch at http://www.murdoch-sutherland.com/Rtools/), it is possible that the other version
+of Perl will be in your $PATH before the ActiveState version. You can either modify your $PATH so
+that the ActiveState version is located first, or use the 'perl' argument in the WriteXLS() function
+to indicate the full path to the ActiveState Perl executable. The former would be the easiest approach
+in the long run, as the ActiveState version of Perl will provide the same functionality and more as
+compared to the RTools version.
+
+If you should have an older version of ActiveState installed on your system, which may be missing
+any of the required modules, you can either upgrade or the easiest way to install them would be to
+use ActiveState's Perl Package Manager (PPM). This would allow you to easily install the additional
+modules from the PPM repositories without requiring additional building tools. More information on
+using PPM is available here:
+
+  http://aspn.activestate.com/ASPN/Downloads/ActivePerl/PPM/
+
+Alternatives to using the ActiveState version of Perl would include using the Strawberry Perl distribution
+available from:
+
+  http://strawberryperl.com/
+
+or as noted above, the RTools version of Perl that Duncan provides. In either case, as of this writing,
+some of the required Perl modules (notably Text::CSV_XS) are not included. In both of these cases, you 
+would need to install the missing modules from CPAN, using a command in the Windows Command Terminal like:
+
+  cpan -i Text::CSV_XS
+
+As noted above, these modules also require a C compiler and associated tools to be installed. Thus, if
+you have the RTools package installed, you should be set. If you are using the Strawberry Perl installation
+then you should install the RTools package, as it provides all of the required C compilers, make, tar and
+related tools that will be needed to build and install the additional Perl modules from source code.
+
+
+LINUX
+
+The more common Linux distributions, such as Debian, Ubuntu, Red Hat and Fedora, provide relatively easy
+to use "package management" systems that would allow you to install Perl and add-on modules via command line
+and GUI based tools. On the former two, the most common is 'apt-get'. On the latter two 'yum' is common.
+
+These package management systems will also check and handle any package dependencies that may also be required
+on your system, including Perl itself.
+
+These systems would enable you to install Perl and any additional modules using pre-compiled binary packages
+via these command line and/or GUI based tools without needing additional build tools.
+
+For Debian/Ubuntu, these Perl modules are packaged as '.deb' files and are typically prefixed with 
+'libSOMETHING-perl'. For example:
+
+  libtext-csv-xs-perl
+
+For RH/Fedora, these perl modules are packaged as 'RPM' files and are typically prefixed with 'perl-SOMETHING'.
+For example:
+  
+  perl-Text-CSV_XS
+
+Thus, using the package management tool for your system, install the missing modules as may be required.
+
+You could also install the modules from source code using CPAN and if that is your preferred approach, feel
+free to do so. Remember that you will need the required Perl, C and build tools in order to use this methodology.
+
+Lastly, ActiveState does offer a Linux compatible Perl distribution and PPM repository structure. So that is
+also an option for you.
+
+
+OSX
+
+Apple installs a default Perl distribution with OSX on Macs. However, at least Text::CSV_XS appears to not be
+installed by default on all OSX systems.
+
+As with Windows above, the easiest approach may very well be to replace/supercede Apple's installation with the
+ActiveState Perl installation, which would provide all of the required modules.
+
+If you prefer to stay with the Apple provided Perl distribution and tools, which I did, you may need to install
+the missing Perl modules.
+
+In order to do this, Apple uses CPAN and provides the 'cpan' command line tool to install and manage Perl modules.
+
+As discussed, you will also need a C compiler and related build tools. This will require the installation
+of the Apple XCode Tools bundle, which is available from the OSX installation DVD provided by Apple with your Mac, 
+or can be downloaded separately from the Apple Developer web site at:
+
+  http://developer.apple.com/TOOLS/xcode/
+
+You can download the toolset after registering for a free online membership.
+
+Once the tools are installed, you can then install any missing Perl modules by using the command line in a Terminal
+such as:
+
+  [sudo -H] cpan -i Text::CSV_XS
+
+The 'sudo -H' is optional. It is required if you want to install the additional modules for yourself and other users 
+of the Mac. Otherwise, if you just want to perform a 'local' install for yourself, it is not required.
+
+
+OTHERS
+
+On other operating systems, such as Solaris, the basic approach will be similar to that of Linux, where you can use the 
+vendor supplied Perl and installation/build tools or possibly use the ActiveState Perl distribution, which is also
+available for Solaris.
+
+If you have another operating system not referenced here, check with your vendor and/or post a message to r-help. If you 
+do elect to post to r-help, please be sure to read the Posting Guide to maximize the likelihood of getting a reasonable
+response: http://www.R-project.org/posting-guide.html
+
+

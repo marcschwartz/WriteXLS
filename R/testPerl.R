@@ -1,0 +1,77 @@
+###############################################################################
+#
+# testPerl.R
+#
+# Test for the presence of Perl and the required modules
+#
+# Copyright 2009, Marc Schwartz <marc_schwartz@me.com>
+#
+# This software is distributed under the terms of the GNU General
+# Public License Version 2, June 1991.  
+
+testPerl <- function(perl = "perl")
+{
+  require(WriteXLS)
+
+  # Get path to WriteXLS Perl tree
+  Perl.Path <- file.path(.path.package("WriteXLS"), "Perl")
+
+  # Check For Perl first
+  CMD <- paste(perl, "-v")
+  res <- system(CMD, intern = TRUE, ignore.stderr = TRUE)
+  
+  if (length(res) == 0) {
+    message("\nPerl was not found on your system. Either check $PATH if installed or please install Perl.\n",
+         "See the package INSTALL file.\n")
+    
+    invisible(FALSE)
+  } else {
+    message("Perl found.\n")
+
+    PerlModules <- c("OLE/Storage_Lite.pm",
+                   "Parse/RecDescent.pm",
+                   "Getopt/Long.pm",
+                   "File/Basename.pm",
+                   "Spreadsheet/WriteExcel.pm",
+                   "Encode.pm",
+                   "File/Glob.pm",
+                   "Text/CSV_XS.pm")
+
+    Found <- rep(FALSE, length(PerlModules))
+  
+    # Get Perl's current @INC array to search for required modules
+    CMD <- paste(perl, "-e \"print join('\n', @INC);\"")
+    PERLINC <- system(CMD, intern = TRUE)
+
+    # Add WriteXLS Perl tree
+    # Substitute for current directory "." in PERLINC if there
+    # Takes a long time to search and modules unlikely to be there anyway
+    CurrDir <- grep("^\\.$", PERLINC)
+    if (length(CurrDir) > 0) {
+      PERLINC[CurrDir] <- Perl.Path
+    } else {
+      PERLINC <- c(PERLINC, Perl.Path)
+    }
+
+    for (PATH in PERLINC)
+    {
+      FILES <- list.files(path = PATH, pattern = "\\.pm", recursive = TRUE)
+      Found[which(PerlModules %in% FILES)] <- TRUE
+
+      if (all(Found))
+        break
+    }
+
+    if (!all(Found)) {
+      Missing <- paste(sub("\\.pm", "", sub("/", "::", PerlModules[!Found])), collapse = "\n")
+      message("The following Perl modules were not found on this system:\n")
+      message(Missing, "\n")
+      message("If you have more than one Perl installation, be sure the correct one was used here.\n")
+      message("Otherwise, please install the missing modules. See the package INSTALL file for more information.\n")
+      invisible(FALSE)
+    } else {
+      message("All required Perl modules were found.\n")
+      invisible(TRUE)
+    }
+  }
+}
