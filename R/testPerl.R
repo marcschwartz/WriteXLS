@@ -9,7 +9,7 @@
 # This software is distributed under the terms of the GNU General
 # Public License Version 2, June 1991.  
 
-testPerl <- function(perl = "perl")
+testPerl <- function(perl = "perl", verbose = TRUE)
 {
   require(WriteXLS)
 
@@ -20,22 +20,23 @@ testPerl <- function(perl = "perl")
   CMD <- paste(perl, "-v")
   res <- system(CMD, intern = TRUE, ignore.stderr = TRUE)
   
-  if (length(res) == 0) {
+  if ((length(res) == 0) & (verbose)) {
     message("\nPerl was not found on your system. Either check $PATH if installed or please install Perl.\n",
          "See the package INSTALL file.\n")
     
     invisible(FALSE)
   } else {
-    message("Perl found.\n")
+    if (verbose)
+      message("Perl found.\n")
 
     PerlModules <- c("OLE/Storage_Lite.pm",
-                   "Parse/RecDescent.pm",
-                   "Getopt/Long.pm",
-                   "File/Basename.pm",
-                   "Spreadsheet/WriteExcel.pm",
-                   "Encode.pm",
-                   "File/Glob.pm",
-                   "Text/CSV_XS.pm")
+                     "Parse/RecDescent.pm",
+                     "Getopt/Long.pm",
+                     "File/Basename.pm",
+                     "Spreadsheet/WriteExcel.pm",
+                     "Encode.pm",
+                     "File/Glob.pm",
+                     "Text/CSV_XS.pm")
 
     Found <- rep(FALSE, length(PerlModules))
   
@@ -63,14 +64,18 @@ testPerl <- function(perl = "perl")
     }
 
     if (!all(Found)) {
-      Missing <- paste(sub("\\.pm", "", sub("/", "::", PerlModules[!Found])), collapse = "\n")
-      message("The following Perl modules were not found on this system:\n")
-      message(Missing, "\n")
-      message("If you have more than one Perl installation, be sure the correct one was used here.\n")
-      message("Otherwise, please install the missing modules. See the package INSTALL file for more information.\n")
+      if (verbose)
+      {
+        Missing <- paste(sub("\\.pm", "", sub("/", "::", PerlModules[!Found])), collapse = "\n")
+        message("The following Perl modules were not found on this system:\n")
+        message(Missing, "\n")
+        message("If you have more than one Perl installation, be sure the correct one was used here.\n")
+        message("Otherwise, please install the missing modules. See the package INSTALL file for more information.\n")
+      }
       invisible(FALSE)
     } else {
-      message("All required Perl modules were found.\n")
+      if (verbose)
+        message("All required Perl modules were found.\n")
       invisible(TRUE)
     }
   }

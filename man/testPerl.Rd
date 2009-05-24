@@ -3,10 +3,11 @@
 \title{Test Perl installation and required modules for WriteXLS()}
 \description{Test Perl installation and required modules for WriteXLS()}
 \usage{
-  testPerl(perl = "perl")
+  testPerl(perl = "perl", verbose = TRUE)
 }
 \arguments{
   \item{perl}{Name of the perl executable to be called.}
+  \item{verbose}{Output test result messages.}
 }
 \details{
   This function will test your current system to be sure that Perl is installed
@@ -40,7 +41,7 @@
   from CPAN or via your OS package manager.
 }
 \author{
-  Marc Schwartz \email{marcs\_schwartz@me.com}
+  Marc Schwartz \email{marc\_schwartz@me.com}
 
   Many thanks to Prof. Brian Ripley for his assistance in the testing of this package. 
 }

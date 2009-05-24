@@ -12,11 +12,12 @@
 # Public License Version 2, June 1991.  
 
 
-# Called as: WriteXLS.pl [--CSVpath] [--CSVfiles] [--verbose] ExcelFileName
+# Called as: WriteXLS.pl [--CSVpath] [--CSVfiles] [--verbose] [--SN] ExcelFileName
 
 # CSVpath = Path to CSV Files. Defaults to '.'
 # CSVfiles = Names of CSV Files to use. Defaults to '*.csv'
 # verbose = Output status messages. TRUE or FALSE. Defaults to FALSE
+# SN = SheetNames flag. TRUE if SheetNames.txt file present, FALSE if not.
 
 # Spreadsheet::WriteExcel 
 # http://search.cpan.org/~jmcnamara/Spreadsheet-WriteExcel/lib/Spreadsheet/WriteExcel.pm
@@ -41,10 +42,13 @@ use Encode;
 my $CSVPath = '.';
 my $CSVFiles = "*.csv";
 my $verbose = "FALSE";
+my $SN = "FALSE";
+
 
 GetOptions ('CSVpath=s' => \$CSVPath, 
             'CSVfiles=s' => \$CSVFiles,
-            'verbose=s' => \$verbose);
+            'verbose=s' => \$verbose,
+            'SN=s' => \$SN);
 
 my $ExcelFileName = $ARGV[0];
 
@@ -55,6 +59,20 @@ if ($verbose eq "TRUE") {
 }
 
 my $XLSFile  = Spreadsheet::WriteExcel->new($ExcelFileName);
+
+# If SheetNames.txt present, read it
+my @SheetNames = "";
+my $SNInd = 0;
+if ($SN eq "TRUE") {
+  open (SNHANDLE, "$CSVPath/SheetNames.txt") || die "ERROR: cannot open $CSVPath/SheetNames.txt. $!\n";
+  @SheetNames = <SNHANDLE>;
+  close SNHANDLE;  
+
+  # Use chomp() to remove trailing newline ('\n') from each element
+  # which will be a remnant from reading the file
+  # Otherwise the newline will be counted in the length of the worksheet name
+  chomp(@SheetNames)
+}
 
 
 # Glob file path and names
@@ -74,10 +92,16 @@ foreach my $FileName (@FileNames) {
   # Create new sheet with filename prefix
   # ($base, $dir, $ext) = fileparse ($FileName, '..*');
   my $FName = (fileparse ($FileName, '\..*'))[0];
-
-  # Only take the first 31 chars, which is the
-  # limit for a worksheet name
-  my $SheetName = substr($FName, 0, 31);
+  
+  my $SheetName = "";
+  if ($SN eq "TRUE") {
+    $SheetName = $SheetNames[$SNInd]; 
+    $SNInd++;
+  } else {
+    # Only take the first 31 chars, which is the
+    # limit for a worksheet name
+    $SheetName = substr($FName, 0, 31);
+  }
 
   if ($verbose eq "TRUE") {
     print "Creating New WorkSheet: $SheetName\n\n";
