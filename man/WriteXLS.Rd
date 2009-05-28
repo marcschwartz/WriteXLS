@@ -5,7 +5,6 @@
 \usage{
   WriteXLS(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl",
            verbose = FALSE, envir = parent.frame())
-
 }
 \arguments{
   \item{x}{A character vector containing the names of one or more R
@@ -32,6 +31,15 @@
 
   The actual creation of the Excel file is performed by a Perl script
   called WriteXLS.pl, which is included with this package.
+
+  Note that the named Excel file, if it already exists, will be
+  overwritten and no warning is given. In addition, if the file exists
+  and is open by another application (eg. Excel, OO.org, etc.) you will
+  likely get an error message regarding the inability to open the file
+  and/or that the file is already in use by another application or
+  user. Errors can also occur if the file has been marked as
+  read-only or if your access rights do not allow you to overwrite the
+  file or write to the folder you have indicated in the path to the file.
 
   There is an intermediate step, where the R data frames are first written
   to CSV files using \code{write.table} before being written
@@ -85,7 +93,8 @@
   the Perl \code{Encode} module by default.
 }
 \value{
-  None
+  TRUE if the Excel file was successfully created.
+  FALSE if any errors occurred.
 }
 \note{
   Please be sure to read the included INSTALL file (in the main package installation 

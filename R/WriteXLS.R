@@ -27,19 +27,40 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
   if (!is.null(SheetNames))
   {
     if (any(duplicated(SheetNames)))
-      stop("At least one entry in 'SheetNames' is duplicated. Excel worksheets must have unique names.")
+    {  
+      message("At least one entry in 'SheetNames' is duplicated. Excel worksheets must have unique names.")
+      return(invisible(FALSE))
+    }
      
     if (length(x) != length(SheetNames))
-      stop("The number of 'SheetNames' does not equal the number of data frames in 'x'")
+    {  
+      message("The number of 'SheetNames' does not equal the number of data frames in 'x'")
+      return(invisible(FALSE))
+    }
 
     if (any(nchar(SheetNames) > 31))
-      stop("At least one of 'SheetNames' is > 31 characters, which is the Excel limit")
+    {
+      message("At least one of 'SheetNames' is > 31 characters, which is the Excel limit")
+      return(invisible(FALSE))
+    }
 
     if (any(grep("\\[|\\]|\\*|\\?|:|/|\\\\", SheetNames)))
-      stop("Invalid characters found in at least one entry in 'SheetNames'. Invalid characters are: []:*?/\\")
+    {  
+      message("Invalid characters found in at least one entry in 'SheetNames'. Invalid characters are: []:*?/\\")
+      return(invisible(FALSE))
+    }
   } else {
     if (any(duplicated(substr(x, 1, 31))))
-      stop("At least one data frame entry in 'x' is duplicated up to the first 31 characters. Excel worksheets must have unique names.")
+    {
+      message("At least one data frame entry in 'x' is duplicated up to the first 31 characters. Excel worksheets must have unique names.")
+      return(invisible(FALSE))
+    }
+
+    if (any(grep("\\[|\\]|\\*|\\?|:|/|\\\\", x)))
+    {  
+      message("Invalid characters found in at least one data frame entry in 'x'. Invalid characters are: []:*?/\\")
+      return(invisible(FALSE))
+    }  
   }
   
   # Get path to WriteXLS.pl
@@ -108,5 +129,11 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
 
   # Check to see if Result != 0 in the case of the failure of the Perl script
   # This should also raise an error for R CMD check for package testing on R-Forge and CRAN
-  if (Result != 0) stop("The Perl script 'WriteXLS.pl' failed to run successfully.")
+  if (Result != 0)
+  {
+    message("The Perl script 'WriteXLS.pl' failed to run successfully.")
+    return(invisible(FALSE))
+  } else {
+    return(invisible(TRUE))
+  }
 }
