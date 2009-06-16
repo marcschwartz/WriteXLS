@@ -4,7 +4,7 @@
 \description{Writes one or more R data frames to an Excel file}
 \usage{
   WriteXLS(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl",
-           verbose = FALSE, envir = parent.frame())
+           verbose = FALSE, Encoding = c("UTF-8", "latin1"), envir = parent.frame())
 }
 \arguments{
   \item{x}{A character vector containing the names of one or more R
@@ -19,7 +19,9 @@
        \code{length(x)}.}
   \item{perl}{Name of the perl executable to be called.}
   \item{verbose}{Output step-by-step status messages during the creation
-       of the Excel file. Default is FALSE.}
+    of the Excel file. Default is FALSE.}
+  \item{Encoding}{Define the character encoding to be used for the
+    exported data frames. Defaults to \code{UTF-8}.}
   \item{envir}{The environment in which to look for the data frames
        named in \code{x}. This defaults to the environment in which
        \code{WriteXLS} was called.}
@@ -90,7 +92,9 @@
   The data frame row names will NOT be exported.
 
   UTF-8 encoded content in the data frame should be properly exported using
-  the Perl \code{Encode} module by default.
+  the Perl \code{Encode} module by default. If you are operating in a
+  'latin1' based locale (also known as iso-8859-1), set \code{Encoding}
+  to 'latin1'.
 }
 \value{
   TRUE if the Excel file was successfully created.

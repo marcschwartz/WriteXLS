@@ -12,12 +12,13 @@
 # Public License Version 2, June 1991.  
 
 
-# Called as: WriteXLS.pl [--CSVpath] [--CSVfiles] [--verbose] [--SN] ExcelFileName
+# Called as: WriteXLS.pl [--CSVpath] [--CSVfiles] [--verbose] [--SN] [--Encoding] ExcelFileName
 
 # CSVpath = Path to CSV Files. Defaults to '.'
 # CSVfiles = Names of CSV Files to use. Defaults to '*.csv'
 # verbose = Output status messages. TRUE or FALSE. Defaults to FALSE
 # SN = SheetNames flag. TRUE if SheetNames.txt file present, FALSE if not.
+# Encoding = character encoding. Either "UTF-8" (default) or "latin1" (aka "iso-8859-1")
 
 # Spreadsheet::WriteExcel 
 # http://search.cpan.org/~jmcnamara/Spreadsheet-WriteExcel/lib/Spreadsheet/WriteExcel.pm
@@ -43,12 +44,14 @@ my $CSVPath = '.';
 my $CSVFiles = "*.csv";
 my $verbose = "FALSE";
 my $SN = "FALSE";
+my $Encoding = "UTF-8";
 
 
 GetOptions ('CSVpath=s' => \$CSVPath, 
             'CSVfiles=s' => \$CSVFiles,
             'verbose=s' => \$verbose,
-            'SN=s' => \$SN);
+            'SN=s' => \$SN,
+            'Encoding=s' => \$Encoding);
 
 my $ExcelFileName = $ARGV[0];
 
@@ -121,8 +124,12 @@ foreach my $FileName (@FileNames) {
       my $Col = 0;
 
       foreach my $Fld (@Fields) {
-         $WorkSheet->write($Row, $Col, decode_utf8($Fld));
-         $Col++;
+	if ($Encoding eq "UTF-8") {
+          $WorkSheet->write($Row, $Col, decode_utf8($Fld));
+        } else {
+          $WorkSheet->write($Row, $Col, decode("iso-8859-1", $Fld));
+	}
+        $Col++;
      }
     $Row++;
    }

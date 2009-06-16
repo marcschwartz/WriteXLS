@@ -11,12 +11,15 @@
 
 
 
-WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl", verbose = FALSE, envir = parent.frame())
+WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl", verbose = FALSE,
+                     Encoding = c("UTF-8", "latin1"), envir = parent.frame())
 {
   # Check to be sure that each 'x' is a data frame
   if (!all(sapply(x, function(i) is.data.frame(get(as.character(i), envir = envir)))))
     stop("One or more of the objects named in 'x' is not a data frame or does not exist")
 
+  Encoding <- match.arg(Encoding)
+  
   # Check to see if SheetNames is specified and if so:
   #  check for duplications
   #  they are same length as the number of dataframes
@@ -122,7 +125,14 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
     cat("\n")
 
   # Call Perl script
-  cmd <- paste(perl, " -I", Perl.Path, " ", Fn.Path, " --CSVPath ", Tmp.Dir, " --verbose ", verbose, " --SN ", SN, " ", ExcelFileName, sep = "")
+  cmd <- paste(perl,
+               " -I", Perl.Path,
+               " ", Fn.Path,
+               " --CSVPath ", Tmp.Dir,
+               " --verbose ", verbose,
+               " --SN ", SN,
+               " --Encoding ", Encoding,
+               " ", ExcelFileName, sep = "")
 
   # Call the external Perl script and get the result of the call
   Result <- system(cmd)
