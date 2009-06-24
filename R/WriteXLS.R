@@ -110,6 +110,11 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
                 sep = ",", quote = TRUE, na = "", row.names = FALSE)
   }
 
+  # Write 'x' (character vector of data frame names) to file
+  # appending Tmp.Dir and ".csv" to each x
+  x <- paste(Tmp.Dir, "/", x, ".csv", sep = "")
+  write(as.matrix(x), file = paste(Tmp.Dir, "/FileNames.txt", sep = ""))
+
   if (!is.null(SheetNames))
   {
     if (verbose)

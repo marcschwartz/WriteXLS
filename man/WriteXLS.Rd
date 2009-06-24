@@ -16,7 +16,8 @@
        names of the dataframes will be used instead. Worksheet names may
        be up to 31 characters in length and must be unique. If
        specified, \code{length(SheetNames)} must be the same as
-       \code{length(x)}.}
+       \code{length(x)}. NOTE: The order of the names here must match
+       the order of the data frames as listed in \code{x}.}
   \item{perl}{Name of the perl executable to be called.}
   \item{verbose}{Output step-by-step status messages during the creation
     of the Excel file. Default is FALSE.}
@@ -31,6 +32,9 @@
   more R data frames and writes them to an Excel 2003 spreadsheet file. Each
   data frame will be written to a separate worksheet in the Excel file.
 
+  The order of the worksheets created in the Excel file will match the
+  order of the entries in \code{x}.
+  
   The actual creation of the Excel file is performed by a Perl script
   called WriteXLS.pl, which is included with this package.
 
@@ -77,6 +81,9 @@
   sure that all of the entries are less than or equal to 31
   characters. If not, an error message will be displayed.
 
+  Note that the order of the names in \code{SheetNames} MUST match the
+  order of the data frames named in \code{x}.
+
   Note that the worksheets must have unique names. Thus, if
   \code{SheetNames} is \code{NULL}, the data frame names will be checked
   to be sure that they are unique up through the first 31 characters. If
@@ -117,7 +124,7 @@
   OLE::Storage\_Lite, Parse::RecDescent, Getopt::Long, File::Basename and 
   Spreadsheet::WriteExcel
 
-  Note that the required Perl modules Encode, File::Glob and Text::CSV\_XS are not included
+  Note that the required Perl modules Encode and Text::CSV\_XS are not included
   with this package.  They are platform specific, requiring local compilation and installation 
   from CPAN or via your OS package manager.
 

@@ -12,10 +12,9 @@
 # Public License Version 2, June 1991.  
 
 
-# Called as: WriteXLS.pl [--CSVpath] [--CSVfiles] [--verbose] [--SN] [--Encoding] ExcelFileName
+# Called as: WriteXLS.pl [--CSVpath] [--verbose] [--SN] [--Encoding] ExcelFileName
 
 # CSVpath = Path to CSV Files. Defaults to '.'
-# CSVfiles = Names of CSV Files to use. Defaults to '*.csv'
 # verbose = Output status messages. TRUE or FALSE. Defaults to FALSE
 # SN = SheetNames flag. TRUE if SheetNames.txt file present, FALSE if not.
 # Encoding = character encoding. Either "UTF-8" (default) or "latin1" (aka "iso-8859-1")
@@ -33,7 +32,6 @@ use strict;
 
 use Spreadsheet::WriteExcel;
 use Getopt::Long;
-use File::Glob;
 use File::Basename;
 use Text::CSV_XS;
 use Encode;
@@ -41,14 +39,12 @@ use Encode;
 
 # Initialize and get command line arguments
 my $CSVPath = '.';
-my $CSVFiles = "*.csv";
 my $verbose = "FALSE";
 my $SN = "FALSE";
 my $Encoding = "UTF-8";
 
 
 GetOptions ('CSVpath=s' => \$CSVPath, 
-            'CSVfiles=s' => \$CSVFiles,
             'verbose=s' => \$verbose,
             'SN=s' => \$SN,
             'Encoding=s' => \$Encoding);
@@ -63,6 +59,7 @@ if ($verbose eq "TRUE") {
 
 my $XLSFile  = Spreadsheet::WriteExcel->new($ExcelFileName);
 
+
 # If SheetNames.txt present, read it
 my @SheetNames = "";
 my $SNInd = 0;
@@ -74,12 +71,18 @@ if ($SN eq "TRUE") {
   # Use chomp() to remove trailing newline ('\n') from each element
   # which will be a remnant from reading the file
   # Otherwise the newline will be counted in the length of the worksheet name
-  chomp(@SheetNames)
+  chomp(@SheetNames);
 }
 
 
-# Glob file path and names
-my @FileNames = <$CSVPath/$CSVFiles>;
+# Get data frame file names
+my @FileNames = "";
+open (DFHANDLE, "$CSVPath/FileNames.txt") || die "ERROR: cannot open $CSVPath/FileNames.txt. $!\n";
+@FileNames = <DFHANDLE>;
+close DFHANDLE;  
+# Use chomp() to remove trailing newline ('\n') from each element
+# which will be a remnant from reading the file
+chomp(@FileNames);
 
 
 foreach my $FileName (@FileNames) {

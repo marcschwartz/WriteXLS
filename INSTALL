@@ -1,5 +1,5 @@
 INSTALLING PERL AND RELATED MODULES TO USE WriteXLS
-March 29, 2009
+June 24, 2009
 
 
 BASIC REQUIREMENTS
@@ -14,7 +14,6 @@ BASIC REQUIREMENTS
   File::Basename
   Spreadsheet::WriteExcel
   Encode
-  File::Glob
   Text::CSV_XS
 
 
@@ -33,14 +32,14 @@ distribution specific actions.
 With the exception of the last three modules, all other modules are included with the WriteXLS
 CRAN package and should be used if not otherwise installed on your system.
 
-It is rather important to note, that the last three modules in the list (Encode, File::Glob and
+It is rather important to note, that the last two modules in the list (Encode and
 Text::CSV_XS) are not "Pure Perl" modules and are therefore not included with WriteXLS. They 
 have been written in such a way as to call external C code. They are therefore operating system
 and Perl version specific. More information on 'XS' Perl modules is available here:
 
   http://en.wikipedia.org/wiki/XS_(Perl)
 
-It is my experience, that of the three, Encode and File::Glob seem to be part of most
+It is my experience, that of the two, Encode seem to be part of most
 default Perl installations. 
 
 Text::CSV_XS seems to be the one most likely to require separate installation, again, with the

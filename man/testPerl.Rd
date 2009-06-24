@@ -36,7 +36,7 @@
   OLE::Storage\_Lite, Parse::RecDescent, Getopt::Long, File::Basename and 
   Spreadsheet::WriteExcel
 
-  Note that the required Perl modules Encode, File::Glob and Text::CSV\_XS are not included
+  Note that the required Perl modules Encode and Text::CSV\_XS are not included
   with this package.  They are platform specific, requiring local compilation and installation 
   from CPAN or via your OS package manager.
 }
