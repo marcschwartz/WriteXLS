@@ -144,7 +144,7 @@
   For Perl Unicode Issues \url{http://www.ahinea.com/en/tech/perl-unicode-struggle.html}
 }
 \seealso{
-  \code{\link[base]{write.table}} and \code{\link[WriteXLS]{testPerl}}
+  \code{\link[utils]{write.table}} and \code{\link[WriteXLS]{testPerl}}
 }
 \examples{
   # Only run the examples if Perl and all modules are present
