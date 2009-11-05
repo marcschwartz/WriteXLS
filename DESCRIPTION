@@ -1,6 +1,6 @@
 Package: WriteXLS
-Version: 1.8.2
-Date: 2009-10-10
+Version: 1.8.3
+Date: 2009-11-04
 Title: Cross-platform Perl based R function to create Excel 2003 (XLS) files
 Description: Cross-platform perl based R function to create Excel (XLS)
              files from one or more data frames. Each data frame will be

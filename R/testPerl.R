@@ -53,13 +53,18 @@ testPerl <- function(perl = "perl", verbose = TRUE)
       PERLINC <- c(PERLINC, Perl.Path)
     }
 
-    for (PATH in PERLINC)
-    {
-      FILES <- list.files(path = PATH, pattern = "\\.pm", recursive = TRUE)
-      Found[which(PerlModules %in% FILES)] <- TRUE
+    # Get rid of non-existing or non-readable paths
+    PERLINC.exists <- PERLINC[file_test("-d", PERLINC)]
 
-      if (all(Found))
-        break
+    # glob the remaining paths and perl modules
+    Level1 <- Sys.glob(file.path(PERLINC.exists, "*.pm"))
+    Level2 <- Sys.glob(file.path(PERLINC.exists, "*", "*.pm"))
+    L1L2 <- c(Level1, Level2)
+
+    # Search for perl modules
+    for (i in seq(along = PerlModules))
+    {
+      Found[i] <- any(grep(PerlModules[i], L1L2))
     }
 
     if (!all(Found)) {
