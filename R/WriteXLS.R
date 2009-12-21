@@ -131,13 +131,13 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
 
   # Call Perl script
   cmd <- paste(perl,
-               " -I", Perl.Path,
-               " ", Fn.Path,
-               " --CSVPath ", Tmp.Dir,
+               " -I", shQuote(Perl.Path),
+               " ", shQuote(Fn.Path),
+               " --CSVPath ", shQuote(Tmp.Dir),
                " --verbose ", verbose,
                " --SN ", SN,
                " --Encoding ", Encoding,
-               " ", ExcelFileName, sep = "")
+               " ", shQuote(ExcelFileName), sep = "")
 
   # Call the external Perl script and get the result of the call
   Result <- system(cmd)
