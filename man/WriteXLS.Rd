@@ -4,25 +4,44 @@
 \description{Writes one or more R data frames to an Excel file}
 \usage{
   WriteXLS(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl",
-           verbose = FALSE, Encoding = c("UTF-8", "latin1"), envir = parent.frame())
+           verbose = FALSE, Encoding = c("UTF-8", "latin1"),
+           AdjWidth = FALSE, AutoFilter = FALSE, BoldHeaderRow = FALSE,
+           FreezeRow = 0, FreezeCol = 0,
+           envir = parent.frame())
 }
 \arguments{
   \item{x}{A character vector containing the names of one or more R
-       data frames to be exported to the Excel file.}
+        data frames to be exported to the Excel file.}
   \item{ExcelFileName}{The name of the Excel file to be created.
-       Must be a valid Excel filename. May include an existing path.}
+        Must be a valid Excel filename. May include an existing path.}
   \item{SheetNames}{A character vector containing the names of each worksheet
-       to be created. If \code{NULL} (the default), the
-       names of the dataframes will be used instead. Worksheet names may
-       be up to 31 characters in length and must be unique. If
-       specified, \code{length(SheetNames)} must be the same as
-       \code{length(x)}. NOTE: The order of the names here must match
-       the order of the data frames as listed in \code{x}.}
+        to be created. If \code{NULL} (the default), the
+        names of the dataframes will be used instead. Worksheet names may
+        be up to 31 characters in length and must be unique. If
+        specified, \code{length(SheetNames)} must be the same as
+        \code{length(x)}. NOTE: The order of the names here must match
+        the order of the data frames as listed in \code{x}.}
   \item{perl}{Name of the perl executable to be called.}
   \item{verbose}{Output step-by-step status messages during the creation
-    of the Excel file. Default is FALSE.}
+        of the Excel file. Default is FALSE.}
   \item{Encoding}{Define the character encoding to be used for the
-    exported data frames. Defaults to \code{UTF-8}.}
+        exported data frames. Defaults to \code{UTF-8}.}
+  \item{AdjWidth}{If \code{TRUE}, will adjust the worksheet column
+        widths based upon the longest entry in each column. This is
+        approximate.}
+  \item{AutoFilter}{If \code{TRUE}, will add autofiltering to each
+        column in each worksheet. Note that not all spreadsheet applications
+        support this feature.}
+  \item{BoldHeaderRow}{If \code{TRUE}, will apply a bold font to the
+        header row for each worksheet.}
+  \item{FreezeRow}{Rows including this row and above this row will be
+        frozen and not scroll. The default value of \code{0} will scroll
+	the entire sheet. Note that not all spreadsheet applications
+	support this feature.}
+  \item{FreezeCol}{Columns including this column and to the left of this
+        column will be frozen and not scroll. The default value of
+	\code{0} will scroll the entire sheet. Note that not all
+	spreadsheet applications support this feature.} 
   \item{envir}{The environment in which to look for the data frames
        named in \code{x}. This defaults to the environment in which
        \code{WriteXLS} was called.}
@@ -102,6 +121,10 @@
   the Perl \code{Encode} module by default. If you are operating in a
   'latin1' based locale (also known as iso-8859-1), set \code{Encoding}
   to 'latin1'.
+
+  Note that arguments \code{AdjWidth}, \code{AutoFilter},
+  \code{BoldHeaderRow}, \code{FreezeRow} and \code{FreezeCol} will apply
+  to ALL worksheets exported.
 }
 \value{
   TRUE if the Excel file was successfully created.
@@ -121,18 +144,19 @@
   Perl modules required for this function that may not be part of a default
   Perl installation are included with this package. These modules include:
 
-  OLE::Storage\_Lite, Parse::RecDescent, Getopt::Long, File::Basename and 
+  OLE::Storage_Lite, Parse::RecDescent, Getopt::Long, File::Basename and 
   Spreadsheet::WriteExcel
 
-  Note that the required Perl modules Encode and Text::CSV\_XS are not included
-  with this package.  They are platform specific, requiring local compilation and installation 
-  from CPAN or via your OS package manager.
-
+  Note that the required Perl modules Encode and Text::CSV_XS are not included
+  with this package. They are platform specific, contain C source code
+  requiring compilation and installation from CPAN or via your
+  OS/Perl package manager to utilize pre-packaged binary versions.
+  
   To test your Perl installation and verify that all required Perl modules are available,
   use the \code{testPerl} function provided in this package.
 }
 \author{
-  Marc Schwartz \email{marc\_schwartz@me.com}
+  Marc Schwartz \email{marc_schwartz@me.com}
 
   Many thanks to Prof. Brian Ripley for his assistance in the testing of this package. 
 }

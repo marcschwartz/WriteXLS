@@ -4,7 +4,7 @@
 #
 # Write R data frames to an Excel binary file using a Perl script
 #
-# Copyright 2009, Marc Schwartz <marc_schwartz@me.com>
+# Copyright 2010, Marc Schwartz <marc_schwartz@me.com>
 #
 # This software is distributed under the terms of the GNU General
 # Public License Version 2, June 1991.  
@@ -12,7 +12,10 @@
 
 
 WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl", verbose = FALSE,
-                     Encoding = c("UTF-8", "latin1"), envir = parent.frame())
+                     Encoding = c("UTF-8", "latin1"),
+                     AdjWidth = FALSE, AutoFilter = FALSE, BoldHeaderRow = FALSE,
+                     FreezeRow = 0, FreezeCol = 0,
+                     envir = parent.frame())
 {
   # Check to be sure that each 'x' is a data frame
   if (!all(sapply(x, function(i) is.data.frame(get(as.character(i), envir = envir)))))
@@ -136,6 +139,11 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
                " --CSVPath ", shQuote(Tmp.Dir),
                " --verbose ", verbose,
                " --SN ", SN,
+               " --AdjWidth ", AdjWidth,
+               " --AutoFilter ", AutoFilter,
+               " --BoldHeaderRow ", BoldHeaderRow,
+               " --FreezeRow ", FreezeRow,
+               " --FreezeCol ", FreezeCol,
                " --Encoding ", Encoding,
                " ", shQuote(ExcelFileName), sep = "")
 
