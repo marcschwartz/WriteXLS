@@ -1,6 +1,6 @@
 # GENERATE RECURSIVE DESCENT PARSER OBJECTS FROM A GRAMMAR
 
-use 5.005;
+use 5.006;
 use strict;
 
 package Parse::RecDescent;
@@ -66,6 +66,8 @@ sub Precompile
         $self = Parse::RecDescent->new($grammar,1,$class)
             || croak("Can't compile bad grammar")
                 if $grammar;
+
+        $self->{_precompiled} = 1;
 
         foreach ( keys %{$self->{rules}} )
             { $self->{rules}{$_}{changed} = 1 }
@@ -391,6 +393,7 @@ sub ' . $namespace . '::' . $self->{"name"} .  '
     my %arg =    ($#arg & 01) ? @arg : (@arg, undef);
     my $text;
     my $lastsep="";
+    my $current_match;
     my $expectation = new Parse::RecDescent::Expectation(q{' . $self->expected() . '});
     $expectation->at($_[1]);
     '. ($parser->{_check}{thisoffset}?'
@@ -1129,8 +1132,7 @@ my $code = '
         ' . ($self->{"lookahead"}<0?'if':'unless')
         . ' ($text =~ s/\A($skip)/$lastsep=$1 and ""/e and '
         . ($check->{itempos}? 'do {'.Parse::RecDescent::Production::incitempos().' 1} and ' : '')
-        . '  $text =~ s' . $ldel . '\A(?:' . $self->{"pattern"} . ')'
-                 . $rdel . $sdel . $mod . ')
+        . '  $text =~ m' . $ldel . '\A(?:' . $self->{"pattern"} . ')' . $rdel . $mod . ')
         {
             '.($self->{"lookahead"} ? '$text = $_savetext;' : '').'
             $expectation->failed();
@@ -1140,11 +1142,13 @@ my $code = '
 
             last;
         }
+		$current_match = substr($text, $-[0], $+[0] - $-[0]);
+        substr($text,0,length($current_match),q{});
         Parse::RecDescent::_trace(q{>>Matched terminal<< (return value: [}
-                        . $& . q{])},
+                        . $current_match . q{])},
                           Parse::RecDescent::_tracefirst($text))
                     if defined $::RD_TRACE;
-        push @item, $item{'.$self->{hashname}.'}=$&;
+        push @item, $item{'.$self->{hashname}.'}=$current_match;
         ' . ($self->{"lookahead"} ? '$text = $_savetext;' : '' ) .'
 ';
 
@@ -1201,7 +1205,7 @@ my $code = '
         ' . ($self->{"lookahead"}<0?'if':'unless')
         . ' ($text =~ s/\A($skip)/$lastsep=$1 and ""/e and '
         . ($check->{itempos}? 'do {'.Parse::RecDescent::Production::incitempos().' 1} and ' : '')
-        . '  $text =~ s/\A' . quotemeta($self->{"pattern"}) . '//)
+        . '  $text =~ m/\A' . quotemeta($self->{"pattern"}) . '/)
         {
             '.($self->{"lookahead"} ? '$text = $_savetext;' : '').'
             $expectation->failed();
@@ -1210,11 +1214,13 @@ my $code = '
                             if defined $::RD_TRACE;
             last;
         }
+		$current_match = substr($text, $-[0], $+[0] - $-[0]);
+        substr($text,0,length($current_match),q{});
         Parse::RecDescent::_trace(q{>>Matched terminal<< (return value: [}
-                        . $& . q{])},
+                        . $current_match . q{])},
                           Parse::RecDescent::_tracefirst($text))
                             if defined $::RD_TRACE;
-        push @item, $item{'.$self->{hashname}.'}=$&;
+        push @item, $item{'.$self->{hashname}.'}=$current_match;
         ' . ($self->{"lookahead"} ? '$text = $_savetext;' : '' ) .'
 ';
 
@@ -1719,7 +1725,7 @@ use vars qw ( $AUTOLOAD $VERSION );
 
 my $ERRORS = 0;
 
-use version; $VERSION = qv('1.96.0');
+our $VERSION = '1.965001';
 
 # BUILDING A PARSER
 
@@ -1768,7 +1774,14 @@ sub Compile($$$$) {
     die "Compilation of Parse::RecDescent grammars not yet implemented\n";
 }
 
-sub DESTROY {}  # SO AUTOLOADER IGNORES IT
+sub DESTROY {
+    my ($self) = @_;
+    my $namespace = $self->{namespace};
+    $namespace =~ s/Parse::RecDescent:://;
+    if (!$self->{_precompiled}) {
+        delete $Parse::RecDescent::{$namespace.'::'};
+    }
+}
 
 # BUILDING A GRAMMAR....
 
@@ -1857,7 +1870,11 @@ sub _generate($$$;$$)
     my $aftererror = 0;
     my $lookahead = 0;
     my $lookaheadspec = "";
-    push @lines, _linecount($grammar) unless $lines[-1];
+    my $must_pop_lines;
+    if (! $lines[-1]) {
+        push @lines, _linecount($grammar) ;
+        $must_pop_lines = 1;
+    }
     $self->{_check}{itempos} = ($grammar =~ /\@itempos\b|\$itempos\s*\[/)
         unless $self->{_check}{itempos};
     for (qw(thisoffset thiscolumn prevline prevoffset prevcolumn))
@@ -1888,19 +1905,19 @@ sub _generate($$$;$$)
         my @components = ();
         if ($grammar =~ m/$COMMENT/gco)
         {
-            _parse("a comment",0,$line);
+            _parse("a comment",0,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
             next;
         }
         elsif ($grammar =~ m/$NEGLOOKAHEAD/gco)
         {
-            _parse("a negative lookahead",$aftererror,$line);
+            _parse("a negative lookahead",$aftererror,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
             $lookahead = $lookahead ? -$lookahead : -1;
             $lookaheadspec .= $1;
             next;   # SKIP LOOKAHEAD RESET AT END OF while LOOP
         }
         elsif ($grammar =~ m/$POSLOOKAHEAD/gco)
         {
-            _parse("a positive lookahead",$aftererror,$line);
+            _parse("a positive lookahead",$aftererror,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
             $lookahead = $lookahead ? $lookahead : 1;
             $lookaheadspec .= $1;
             next;   # SKIP LOOKAHEAD RESET AT END OF while LOOP
@@ -1952,7 +1969,7 @@ sub _generate($$$;$$)
                     { }
                 elsif ($grammar =~ m/$BADREP/gco)
                 {
-                    _parse("an invalid repetition specifier", 0,$line);
+                    _parse("an invalid repetition specifier", 0,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
                     _error("Incorrect specification of a repeated directive",
                            $line);
                     _hint("Repeated directives cannot have
@@ -1975,7 +1992,7 @@ sub _generate($$$;$$)
             }
             elsif ($grammar =~ m/$UNCOMMITMK/gco)
             {
-                _parse("an uncommit marker", $aftererror,$line);
+                _parse("an uncommit marker", $aftererror,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
                 $item = new Parse::RecDescent::Directive('$commit=0;1',
                                   $lookahead,$line,"<uncommit>");
                 $prod and $prod->additem($item)
@@ -1983,7 +2000,7 @@ sub _generate($$$;$$)
             }
             elsif ($grammar =~ m/$QUOTELIKEMK/gco)
             {
-                _parse("an perl quotelike marker", $aftererror,$line);
+                _parse("an perl quotelike marker", $aftererror,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
                 $item = new Parse::RecDescent::Directive(
                     'my ($match,@res);
                      ($match,$text,undef,@res) =
@@ -1996,7 +2013,7 @@ sub _generate($$$;$$)
             elsif ($grammar =~ m/$CODEBLOCKMK/gco)
             {
                 my $outer = $1||"{}";
-                _parse("an perl codeblock marker", $aftererror,$line);
+                _parse("an perl codeblock marker", $aftererror,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
                 $item = new Parse::RecDescent::Directive(
                     'Text::Balanced::extract_codeblock($text,undef,$skip,\''.$outer.'\');
                     ', $lookahead,$line,"<perl_codeblock>");
@@ -2005,7 +2022,7 @@ sub _generate($$$;$$)
             }
             elsif ($grammar =~ m/$VARIABLEMK/gco)
             {
-                _parse("an perl variable marker", $aftererror,$line);
+                _parse("an perl variable marker", $aftererror,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
                 $item = new Parse::RecDescent::Directive(
                     'Text::Balanced::extract_variable($text,$skip);
                     ', $lookahead,$line,"<perl_variable>");
@@ -2014,7 +2031,7 @@ sub _generate($$$;$$)
             }
             elsif ($grammar =~ m/$NOCHECKMK/gco)
             {
-                _parse("a disable checking marker", $aftererror,$line);
+                _parse("a disable checking marker", $aftererror,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
                 if ($rule)
                 {
                     _error("<nocheck> directive not at start of grammar", $line);
@@ -2030,19 +2047,20 @@ sub _generate($$$;$$)
             }
             elsif ($grammar =~ m/$AUTOSTUBMK/gco)
             {
-                _parse("an autostub marker", $aftererror,$line);
+                _parse("an autostub marker", $aftererror,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
                 $::RD_AUTOSTUB = "";
             }
             elsif ($grammar =~ m/$AUTORULEMK/gco)
             {
-                _parse("an autorule marker", $aftererror,$line);
+                _parse("an autorule marker", $aftererror,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
                 $::RD_AUTOSTUB = $1;
             }
             elsif ($grammar =~ m/$AUTOTREEMK/gco)
             {
                 my $base = defined($1) ? $1 : "";
+		my $current_match = substr($grammar, $-[0], $+[0] - $-[0]);
                 $base .= "::" if $base && $base !~ /::$/;
-                _parse("an autotree marker", $aftererror,$line);
+                _parse("an autotree marker", $aftererror,$line, $current_match);
                 if ($rule)
                 {
                     _error("<autotree> directive not at start of grammar", $line);
@@ -2063,7 +2081,7 @@ sub _generate($$$;$$)
 
             elsif ($grammar =~ m/$REJECTMK/gco)
             {
-                _parse("an reject marker", $aftererror,$line);
+                _parse("an reject marker", $aftererror,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
                 $item = new Parse::RecDescent::UncondReject($lookahead,$line,"<reject>");
                 $prod and $prod->additem($item)
                       or  _no_rule("<reject>",$line);
@@ -2072,7 +2090,7 @@ sub _generate($$$;$$)
                 and do { ($code) = extract_codeblock($grammar,'{',undef,'<');
                       $code })
             {
-                _parse("a (conditional) reject marker", $aftererror,$line);
+                _parse("a (conditional) reject marker", $aftererror,$line, $code );
                 $code =~ /\A\s*<reject:(.*)>\Z/s;
                 my $cond = $1;
                 $item = new Parse::RecDescent::Directive(
@@ -2084,7 +2102,7 @@ sub _generate($$$;$$)
                 and do { ($code) = extract_codeblock($grammar,'{',undef,'<');
                       $code })
             {
-                _parse("a score marker", $aftererror,$line);
+                _parse("a score marker", $aftererror,$line, $code );
                 $code =~ /\A\s*<score:(.*)>\Z/s;
                 $prod and $prod->addscore($1, $lookahead, $line)
                       or  _no_rule($code,$line);
@@ -2106,9 +2124,9 @@ sub _generate($$$;$$)
             }
             elsif ($grammar =~ m/$RESYNCMK/gco)
             {
-                _parse("a resync to newline marker", $aftererror,$line);
+                _parse("a resync to newline marker", $aftererror,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
                 $item = new Parse::RecDescent::Directive(
-                          'if ($text =~ s/\A[^\n]*\n//) { $return = 0; $& } else { undef }',
+                          'if ($text =~ s/(\A[^\n]*\n)//) { $return = 0; $1; } else { undef }',
                           $lookahead,$line,"<resync>");
                 $prod and $prod->additem($item)
                       or  _no_rule("<resync>",$line);
@@ -2117,10 +2135,10 @@ sub _generate($$$;$$)
                 and do { ($code) = extract_bracketed($grammar,'<');
                       $code })
             {
-                _parse("a resync with pattern marker", $aftererror,$line);
+                _parse("a resync with pattern marker", $aftererror,$line, $code );
                 $code =~ /\A\s*<resync:(.*)>\Z/s;
                 $item = new Parse::RecDescent::Directive(
-                          'if ($text =~ s/\A'.$1.'//) { $return = 0; $& } else { undef }',
+                          'if ($text =~ s/(\A'.$1.')//) { $return = 0; $1; } else { undef }',
                           $lookahead,$line,$code);
                 $prod and $prod->additem($item)
                       or  _no_rule($code,$line);
@@ -2129,7 +2147,7 @@ sub _generate($$$;$$)
                 and do { ($code) = extract_codeblock($grammar,'<');
                       $code })
             {
-                _parse("a skip marker", $aftererror,$line);
+                _parse("a skip marker", $aftererror,$line, $code );
                 $code =~ /\A\s*<skip:(.*)>\Z/s;
                 $item = new Parse::RecDescent::Directive(
                           'my $oldskip = $skip; $skip='.$1.'; $oldskip',
@@ -2217,36 +2235,36 @@ sub _generate($$$;$$)
             }
             elsif ($grammar =~ m/$COMMITMK/gco)
             {
-                _parse("an commit marker", $aftererror,$line);
+                _parse("an commit marker", $aftererror,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
                 $item = new Parse::RecDescent::Directive('$commit = 1',
                                   $lookahead,$line,"<commit>");
                 $prod and $prod->additem($item)
                       or  _no_rule("<commit>",$line);
             }
             elsif ($grammar =~ m/$NOCHECKMK/gco) {
-                _parse("an hint request", $aftererror,$line);
+                _parse("an hint request", $aftererror,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
         $::RD_CHECK = 0;
         }
             elsif ($grammar =~ m/$HINTMK/gco) {
-                _parse("an hint request", $aftererror,$line);
+                _parse("an hint request", $aftererror,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
         $::RD_HINT = $self->{__HINT__} = 1;
         }
             elsif ($grammar =~ m/$WARNMK/gco) {
-                _parse("an warning request", $aftererror,$line);
+                _parse("an warning request", $aftererror,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
         $::RD_WARN = $self->{__WARN__} = $1 ? $2+0 : 1;
         }
             elsif ($grammar =~ m/$TRACEBUILDMK/gco) {
-                _parse("an grammar build trace request", $aftererror,$line);
+                _parse("an grammar build trace request", $aftererror,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
         $::RD_TRACE = $1 ? $2+0 : 1;
         }
             elsif ($grammar =~ m/$TRACEPARSEMK/gco) {
-                _parse("an parse trace request", $aftererror,$line);
+                _parse("an parse trace request", $aftererror,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
         $self->{__TRACE__} = $1 ? $2+0 : 1;
         }
             elsif ($grammar =~ m/$AUTOERRORMK/gco)
             {
                 $commitonly = $1;
-                _parse("an error marker", $aftererror,$line);
+                _parse("an error marker", $aftererror,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
                 $item = new Parse::RecDescent::Error('',$lookahead,$1,$line);
                 $prod and $prod->additem($item)
                       or  _no_rule("<error>",$line);
@@ -2293,7 +2311,7 @@ sub _generate($$$;$$)
         elsif ($grammar =~ m/$RULE/gco)
         {
             _parseunneg("a rule declaration", 0,
-                    $lookahead,$line) or next;
+                    $lookahead,$line, substr($grammar, $-[0], $+[0] - $-[0]) ) or next;
             my $rulename = $1;
             if ($rulename =~ /Replace|Extend|Precompile|Save/ )
             {   
@@ -2318,7 +2336,7 @@ sub _generate($$$;$$)
         {
             pos($grammar)-=9;
             _parseunneg("a new (uncommitted) production",
-                    0, $lookahead, $line) or next;
+                    0, $lookahead, $line, substr($grammar, $-[0], $+[0] - $-[0]) ) or next;
 
             $prod->check_pending($line) if $prod;
             $prod = new Parse::RecDescent::Production($line,1);
@@ -2330,7 +2348,7 @@ sub _generate($$$;$$)
         {
             pos($grammar)-=6;
             _parseunneg("a new (error) production", $aftererror,
-                    $lookahead,$line) or next;
+                    $lookahead,$line, substr($grammar, $-[0], $+[0] - $-[0]) ) or next;
             $prod->check_pending($line) if $prod;
             $prod = new Parse::RecDescent::Production($line,0,1);
             $rule and $rule->addprod($prod)
@@ -2340,7 +2358,7 @@ sub _generate($$$;$$)
         elsif ($grammar =~ m/$PROD/gco)
         {
             _parseunneg("a new production", 0,
-                    $lookahead,$line) or next;
+                    $lookahead,$line, substr($grammar, $-[0], $+[0] - $-[0]) ) or next;
             $rule
               and (!$prod || $prod->check_pending($line))
               and $prod = $rule->addprod(new Parse::RecDescent::Production($line))
@@ -2349,22 +2367,23 @@ sub _generate($$$;$$)
         }
         elsif ($grammar =~ m/$LITERAL/gco)
         {
-            ($code = $1) =~ s/\\\\/\\/g;
-            _parse("a literal terminal", $aftererror,$line,$1);
+            my $literal = $1;
+            ($code = $literal) =~ s/\\\\/\\/g;
+            _parse("a literal terminal", $aftererror,$line,$literal);
             $item = new Parse::RecDescent::Literal($code,$lookahead,$line);
             $prod and $prod->additem($item)
-                  or  _no_rule("literal terminal",$line,"'$1'");
+                  or  _no_rule("literal terminal",$line,"'$literal'");
         }
         elsif ($grammar =~ m/$INTERPLIT/gco)
         {
-            _parse("an interpolated literal terminal", $aftererror,$line);
+            _parse("an interpolated literal terminal", $aftererror,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
             $item = new Parse::RecDescent::InterpLit($1,$lookahead,$line);
             $prod and $prod->additem($item)
                   or  _no_rule("interpolated literal terminal",$line,"'$1'");
         }
         elsif ($grammar =~ m/$TOKEN/gco)
         {
-            _parse("a /../ pattern terminal", $aftererror,$line);
+            _parse("a /../ pattern terminal", $aftererror,$line, substr($grammar, $-[0], $+[0] - $-[0]) );
             $item = new Parse::RecDescent::Token($1,'/',$3?$3:'',$lookahead,$line);
             $prod and $prod->additem($item)
                   or  _no_rule("pattern terminal",$line,"/$1/");
@@ -2574,14 +2593,15 @@ sub _generate($$$;$$)
                 }
                 elsif ($grammar =~ m/$BADREP/gco)
                 {
-                    _parse("an subrule match with invalid repetition specifier", 0,$line);
+                    my $current_match = substr($grammar, $-[0], $+[0] - $-[0]);
+                    _parse("an subrule match with invalid repetition specifier", 0,$line, $current_match);
                     _error("Incorrect specification of a repeated subrule",
                            $line);
-                    _hint("Repeated subrules like \"$code$argcode$&\" cannot have
+                    _hint("Repeated subrules like \"$code$argcode$current_match\" cannot have
                            a maximum repetition of zero, nor can they have
                            negative components in their ranges.");
                 }
-            }
+	      }
             else
             {
                 _parse("a subrule match", $aftererror,$line,$code);
@@ -2645,7 +2665,10 @@ sub _generate($$$;$$)
 
         $grammar =~ m/\G\s+/gc;
     }
-    pop @lines;
+
+    if ($must_pop_lines) {
+        pop @lines;
+    }
 
     unless ($ERRORS or $isimplicit or !$::RD_CHECK)
     {
@@ -2708,13 +2731,14 @@ sub _check_insatiable($$$$)
        )
     {
         return unless $1 eq $subrule && $min > 0;
-        _warn(3,"Subrule sequence \"$subrule($repspec) $&\" will
+	my $current_match = substr($grammar, $-[0], $+[0] - $-[0]);
+        _warn(3,"Subrule sequence \"$subrule($repspec) $current_match\" will
                (almost certainly) fail.",$line)
         and
         _hint("Unless subrule \"$subrule\" performs some cunning
                lookahead, the repetition \"$subrule($repspec)\" will
                insatiably consume as many matches of \"$subrule\" as it
-               can, leaving none to match the \"$&\" that follows.");
+               can, leaving none to match the \"$current_match\" that follows.");
     }
 }
 
@@ -2904,6 +2928,24 @@ sub set_autoflush {
 use vars '$errortext';
 use vars '$errorprefix';
 
+sub redirect_reporting_to(*;$) {
+    my ($filehandle, $mode) = (@_, '>');
+
+    # Ensure filehandles duplicate...
+    $mode =~ s{ (?<! & ) $ }{&}xms;
+
+    open (ERROR, $mode, $filehandle) or return;
+    set_autoflush(\*ERROR);
+
+    open (TRACE, $mode, $filehandle) or return;
+    set_autoflush(\*TRACE);
+
+    open (TRACECONTEXT, $mode, $filehandle) or return;
+    set_autoflush(\*TRACECONTEXT);
+
+    return 1;
+}
+
 open (ERROR, ">&STDERR");
 format ERROR =
 @>>>>>>>>>>>>>>>>>>>>: ^<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
@@ -3049,22 +3091,22 @@ sub _trace($;$$$)
     }
 }
 
-sub _parseunneg($$$$)
+sub _parseunneg($$$$$)
 {
-    _parse($_[0],$_[1],$_[3]);
+    _parse($_[0],$_[1],$_[3],$_[4]);
     if ($_[2]<0)
     {
-        _error("Can't negate \"$&\".",$_[3]);
+        _error("Can't negate \"$_[4]\".",$_[3]);
         _hint("You can't negate $_[0]. Remove the \"...!\" before
-               \"$&\".");
+               \"$_[4]\".");
         return 0;
     }
     return 1;
 }
 
-sub _parse($$$;$)
+sub _parse($$$$)
 {
-    my $what = $_[3] || $&;
+    my $what = $_[3];
        $what =~ s/^\s+//;
     if ($_[1])
     {
@@ -3106,7 +3148,7 @@ Parse::RecDescent - Generate Recursive-Descent Parsers
 
 =head1 VERSION
 
-This document describes version 1.94 of Parse::RecDescent,
+This document describes version 1.965001 of Parse::RecDescent
 released April  9, 2003.
 
 =head1 SYNOPSIS
@@ -3368,7 +3410,7 @@ the value associated with the repeated subrule "statement(s)" is a reference
 to an array containing the values matched by each call to the individual
 subrule "statement".
 
-Repetition modifieres may include a separator pattern:
+Repetition modifiers may include a separator pattern:
 
     program: statement(s /;/)
 
@@ -4622,6 +4664,33 @@ The corresponding directives are useful to "hardwire" the various
 debugging features into a particular grammar (rather than having to set
 and reset external variables).
 
+=item Redirecting diagnostics
+
+The diagnostics provided by the tracing mechanism go to STDERR by default,
+but can be directed to a specific filehandle by calling the
+C<Parse::RecDescent::redirect_reporting_to()> subroutine (which must be fully
+qualified, as it is not exported).
+
+This subroutine expects either one or two arguments. The first is the
+filehandle you want all diagnostics redirected to. It must already be
+open for output, and may be specified as a typeglob, or as a reference
+to a filehandle:
+
+    Parse::RecDescent::redirect_reporting_to(*STDOUT);
+    Parse::RecDescent::redirect_reporting_to($fh);
+
+The optional second argument specifies the mode in which data is to be written
+to the handle. By default the "overwrite" mode ('>') is used, but you can
+explicitly pass '>>' to select "append" mode:
+
+    # Append reports to my log file...
+    Parse::RecDescent::redirect_reporting_to($my_log_file, '>>');
+
+The subroutine returns true if it successfully redirects all reporting
+streams, or false if it is not able to do so (typically because you gave
+it an invalid filehandle).
+
+
 =item Consistency checks
 
 Whenever a parser is build, Parse::RecDescent carries out a number of
@@ -5192,9 +5261,9 @@ Of course, none of the above specifications handle the case of an empty
 list, since the C<E<lt>leftop:...E<gt>> and C<E<lt>rightop:...E<gt>> directives
 require at least a single right or left operand to match. To specify
 that the operator can match "trivially", 
-it's necessary to add a C<(?)> qualifier to the directive:
+it's necessary to add a C<(s?)> qualifier to the directive:
 
-    list:      '('  <leftop: list_item /(,|=>)/ list_item>(?)  ')' 
+    list:      '('  <leftop: list_item /(,|=>)/ list_item>(s?)  ')' 
 
 Note that in almost all the above examples, the first and third arguments
 of the C<<leftop:...E<gt>> directive were the same subrule. That is because
@@ -5952,6 +6021,25 @@ importantly) is the problem important enough to even warrant the non-trivial
 effort of building an automated solution?
 
 =back
+
+=head1 SUPPORT
+
+=head2 Mailing List
+
+Visit L<http://www.perlfoundation.org/perl5/index.cgi?parse_recdescent> to sign up for the mailing list.
+
+L<http://www.PerlMonks.org> is also a good place to ask questions.
+
+=head2 FAQ
+
+Visit L<Parse::RecDescent::FAQ> for answers to frequently (and not so
+frequently) asked questions about Parse::RecDescent
+
+=head1 SEE ALSO
+
+L<Regexp::Grammars> provides Parse::RecDescent style parsing using native
+Perl 5.10 regular expressions.
+
 
 =head1 LICENCE AND COPYRIGHT
 

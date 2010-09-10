@@ -1,44 +1,26 @@
+#! perl
+
 # Getopt::Long.pm -- Universal options parsing
-
-package Getopt::Long;
-
-# RCS Status      : $Id: Long.pm,v 2.74 2007/09/29 13:40:13 jv Exp $
 # Author          : Johan Vromans
 # Created On      : Tue Sep 11 15:00:12 1990
 # Last Modified By: Johan Vromans
-# Last Modified On: Sat Sep 29 15:38:55 2007
-# Update Count    : 1571
+# Last Modified On: Fri Jul  9 14:47:45 2010
+# Update Count    : 1618
 # Status          : Released
 
-################ Copyright ################
-
-# This program is Copyright 1990,2007 by Johan Vromans.
-# This program is free software; you can redistribute it and/or
-# modify it under the terms of the Perl Artistic License or the
-# GNU General Public License as published by the Free Software
-# Foundation; either version 2 of the License, or (at your option) any
-# later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
-#
-# If you do not have a copy of the GNU General Public License write to
-# the Free Software Foundation, Inc., 675 Mass Ave, Cambridge,
-# MA 02139, USA.
-
 ################ Module Preamble ################
+
+package Getopt::Long;
 
 use 5.004;
 
 use strict;
 
 use vars qw($VERSION);
-$VERSION        =  2.37;
+$VERSION        =  2.3802;
 # For testing versions only.
 use vars qw($VERSION_STRING);
-$VERSION_STRING = "2.37";
+$VERSION_STRING = "2.38_02";
 
 use Exporter;
 use vars qw(@ISA @EXPORT @EXPORT_OK);
@@ -46,8 +28,8 @@ use vars qw(@ISA @EXPORT @EXPORT_OK);
 
 # Exported subroutines.
 sub GetOptions(@);		# always
-sub GetOptionsFromArray($@);	# on demand
-sub GetOptionsFromString($@);	# on demand
+sub GetOptionsFromArray(@);	# on demand
+sub GetOptionsFromString(@);	# on demand
 sub Configure(@);		# on demand
 sub HelpMessage(@);		# on demand
 sub VersionMessage(@);		# in demand
@@ -205,7 +187,7 @@ sub getoptions {
 	# Locally set exception handler to default, otherwise it will
 	# be called implicitly here, and again explicitly when we try
 	# to deliver the messages.
-	local ($SIG{__DIE__}) = '__DEFAULT__';
+	local ($SIG{__DIE__}) = 'DEFAULT';
 	$ret = Getopt::Long::GetOptions (@_);
     };
 
@@ -271,7 +253,7 @@ sub GetOptions(@) {
     goto &GetOptionsFromArray;
 }
 
-sub GetOptionsFromString($@) {
+sub GetOptionsFromString(@) {
     my ($string) = shift;
     require Text::ParseWords;
     my $args = [ Text::ParseWords::shellwords($string) ];
@@ -285,7 +267,7 @@ sub GetOptionsFromString($@) {
     $ret;
 }
 
-sub GetOptionsFromArray($@) {
+sub GetOptionsFromArray(@) {
 
     my ($argv, @optionlist) = @_;	# local copy of the option descriptions
     my $argend = '--';		# option list terminator
@@ -304,8 +286,7 @@ sub GetOptionsFromArray($@) {
 	# Avoid some warnings if debugging.
 	local ($^W) = 0;
 	print STDERR
-	  ("Getopt::Long $Getopt::Long::VERSION (",
-	   '$Revision: 2.74 $', ") ",
+	  ("Getopt::Long $Getopt::Long::VERSION ",
 	   "called from package \"$pkg\".",
 	   "\n  ",
 	   "argv: (@$argv)",
@@ -460,6 +441,14 @@ sub GetOptionsFromArray($@) {
 		eval ("\$linkage{\$orig} = \\\$".$pkg."::opt_$ov;");
 	    }
 	}
+
+	if ( $opctl{$name}[CTL_TYPE] eq 'I'
+	     && ( $opctl{$name}[CTL_DEST] == CTL_DEST_ARRAY
+		  || $opctl{$name}[CTL_DEST] == CTL_DEST_HASH )
+	   ) {
+	    $error .= "Invalid option linkage for \"$opt\"\n";
+	}
+
     }
 
     # Bail out if errors found.
@@ -501,7 +490,7 @@ sub GetOptionsFromArray($@) {
 	print STDERR ("=> arg \"", $opt, "\"\n") if $debug;
 
 	# Double dash is option list terminator.
-	if ( $opt eq $argend ) {
+	if ( defined($opt) && $opt eq $argend ) {
 	  push (@ret, $argend) if $passthrough;
 	  last;
 	}
@@ -588,7 +577,7 @@ sub GetOptionsFromArray($@) {
 			    if $debug;
 			my $eval_error = do {
 			    local $@;
-			    local $SIG{__DIE__}  = '__DEFAULT__';
+			    local $SIG{__DIE__}  = 'DEFAULT';
 			    eval {
 				&{$linkage{$opt}}
 				  (Getopt::Long::CallBack->new
@@ -706,8 +695,14 @@ sub GetOptionsFromArray($@) {
 		  if $debug;
 		my $eval_error = do {
 		    local $@;
-		    local $SIG{__DIE__}  = '__DEFAULT__';
-		    eval { &$cb ($tryopt) };
+		    local $SIG{__DIE__}  = 'DEFAULT';
+		    eval {
+			# The arg to <> cannot be the CallBack object
+			# since it may be passed to other modules that
+			# get confused (e.g., Archive::Tar). Well,
+			# it's not relevant for this callback anyway.
+			&$cb($tryopt);
+		    };
 		    $@;
 		};
 		print STDERR ("=> die($eval_error)\n")
@@ -777,7 +772,7 @@ sub ParseOptionSpec ($$) {
 		     # Option name
 		     (?: \w+[-\w]* )
 		     # Alias names, or "?"
-		     (?: \| (?: \? | \w[-\w]* )? )*
+		     (?: \| (?: \? | \w[-\w]* ) )*
 		   )?
 		   (
 		     # Either modifiers ...
@@ -900,10 +895,11 @@ sub FindOption ($$$$$) {
 
     print STDERR ("=> find \"$opt\"\n") if $debug;
 
-    return (0) unless $opt =~ /^$prefix(.*)$/s;
+    return (0) unless defined($opt);
+    return (0) unless $opt =~ /^($prefix)(.*)$/s;
     return (0) if $opt eq "-" && !defined $opctl->{''};
 
-    $opt = $+;
+    $opt = substr( $opt, length($1) ); # retain taintedness
     my $starter = $1;
 
     print STDERR ("=> split \"$starter\"+\"$opt\"\n") if $debug;
@@ -914,10 +910,11 @@ sub FindOption ($$$$$) {
     # If it is a long option, it may include the value.
     # With getopt_compat, only if not bundling.
     if ( ($starter=~/^$longprefix$/
-          || ($getopt_compat && ($bundling == 0 || $bundling == 2)))
-	  && $opt =~ /^([^=]+)=(.*)$/s ) {
-	$opt = $1;
-	$optarg = $2;
+	  || ($getopt_compat && ($bundling == 0 || $bundling == 2)))
+	 && (my $oppos = index($opt, '=', 1)) > 0) {
+	my $optorg = $opt;
+	$opt = substr($optorg, 0, $oppos);
+	$optarg = substr($optorg, $oppos + 1); # retain tainedness
 	print STDERR ("=> option \"", $opt,
 		      "\", optarg = \"$optarg\"\n") if $debug;
     }
@@ -950,7 +947,7 @@ sub FindOption ($$$$$) {
     }
 
     # Try auto-abbreviation.
-    elsif ( $autoabbrev ) {
+    elsif ( $autoabbrev && $opt ne "" ) {
 	# Sort the possible long option names.
 	my @names = sort(keys (%$opctl));
 	# Downcase if allowed.
@@ -1016,7 +1013,12 @@ sub FindOption ($$$$$) {
 	    $opt = substr($opt,0,1);
             unshift (@$argv, $starter.$rest) if defined $rest;
 	}
-	warn ("Unknown option: ", $opt, "\n");
+	if ( $opt eq "" ) {
+	    warn ("Missing option after ", $starter, "\n");
+	}
+	else {
+	    warn ("Unknown option: ", $opt, "\n");
+	}
 	$error++;
 	return (1, undef);
     }
@@ -1481,9 +1483,8 @@ sub name {
 }
 
 use overload
-  # Treat this object as an oridinary string for legacy API.
+  # Treat this object as an ordinary string for legacy API.
   '""'	   => \&name,
-  '0+'	   => sub { 0 },
   fallback => 1;
 
 1;
@@ -1500,9 +1501,10 @@ Getopt::Long - Extended processing of command line options
   my $data   = "file.dat";
   my $length = 24;
   my $verbose;
-  $result = GetOptions ("length=i" => \$length,    # numeric
-                        "file=s"   => \$data,      # string
-			"verbose"  => \$verbose);  # flag
+  GetOptions ("length=i" => \$length,    # numeric
+              "file=s"   => \$data,      # string
+              "verbose"  => \$verbose)   # flag
+  or die("Error in command line arguments\n");
 
 =head1 DESCRIPTION
 
@@ -1559,13 +1561,13 @@ The C<+> form is now obsolete and strongly deprecated.
 
 Getopt::Long is the Perl5 successor of C<newgetopt.pl>. This was the
 first Perl module that provided support for handling the new style of
-command line options, hence the name Getopt::Long. This module also
-supports single-character options and bundling. Single character
-options may be any alphabetic character, a question mark, and a dash.
-Long options may consist of a series of letters, digits, and dashes.
-Although this is currently not enforced by Getopt::Long, multiple
-consecutive dashes are not allowed, and the option name must not end
-with a dash.
+command line options, in particular long option names, hence the Perl5
+name Getopt::Long. This module also supports single-character options
+and bundling. Single character options may be any alphabetic
+character, a question mark, and a dash. Long options may consist of a
+series of letters, digits, and dashes. Although this is currently not
+enforced by Getopt::Long, multiple consecutive dashes are not allowed,
+and the option name must not end with a dash.
 
 To use Getopt::Long from a Perl program, you must include the
 following line in your Perl program:
@@ -1729,7 +1731,7 @@ The destination for the option must be an array or array reference.
 
 It is also possible to specify the minimal and maximal number of
 arguments an option takes. C<foo=s{2,4}> indicates an option that
-takes at least two and at most 4 arguments. C<foo=s{,}> indicates one
+takes at least two and at most 4 arguments. C<foo=s{1,}> indicates one
 or more values; C<foo:s{,}> indicates zero or more option values.
 
 =head2 Options with hash values
@@ -1749,7 +1751,7 @@ When used with command line options:
     --define os=linux --define vendor=redhat
 
 the hash C<%defines> (or C<%$defines>) will contain two keys, C<"os">
-with value C<"linux> and C<"vendor"> with value C<"redhat">. It is
+with value C<"linux"> and C<"vendor"> with value C<"redhat">. It is
 also possible to specify that only integer or floating point numbers
 are acceptable values. The keys are always taken to be strings.
 
@@ -1760,7 +1762,8 @@ an option is encountered on the command line can be achieved by
 designating a reference to a subroutine (or an anonymous subroutine)
 as the option destination. When GetOptions() encounters the option, it
 will call the subroutine with two or three arguments. The first
-argument is the name of the option. For a scalar or array destination,
+argument is the name of the option. (Actually, it is an object that
+stringifies to the name of the option.) For a scalar or array destination,
 the second argument is the value to be stored. For a hash destination,
 the second arguments is the key to the hash, and the third argument
 the value to be stored. It is up to the subroutine to store the value,
@@ -1785,6 +1788,12 @@ If the text of the error message starts with an exclamation mark C<!>
 it is interpreted specially by GetOptions(). There is currently one
 special command implemented: C<die("!FINISH")> will cause GetOptions()
 to stop processing options, as if it encountered a double dash C<-->.
+
+In version 2.37 the first argument to the callback function was
+changed from string to object. This was done to make room for
+extensions and more detailed control. The object stringifies to the
+option name so this change should not introduce compatibility
+problems.
 
 =head2 Options with multiple names
 
@@ -1927,7 +1936,7 @@ option will be incremented.
 Getopt::Long can be used in an object oriented way as well:
 
     use Getopt::Long;
-    $p = new Getopt::Long::Parser;
+    $p = Getopt::Long::Parser->new;
     $p->configure(...configuration options...);
     if ($p->getoptions(...options descriptions...)) ...
 
@@ -1955,7 +1964,7 @@ messages. For example:
 
     GetOptions('help|?' => \$help, man => \$man) or pod2usage(2);
     pod2usage(1) if $help;
-    pod2usage(-exitstatus => 0, -verbose => 2) if $man;
+    pod2usage(-exitval => 0, -verbose => 2) if $man;
 
     __END__
 
@@ -2010,6 +2019,12 @@ The following two calls behave identically:
     $ret = GetOptions( ... );
     $ret = GetOptionsFromArray(\@ARGV, ... );
 
+This also means that a first argument hash reference now becomes the
+second argument:
+
+    $ret = GetOptions(\%opts, ... );
+    $ret = GetOptionsFromArray(\@ARGV, \%opts, ... );
+
 =head2 Parsing options from an arbitrary string
 
 A special entry C<GetOptionsFromString> can be used to parse options
@@ -2032,6 +2047,9 @@ remaining arguments:
 If any arguments remain, and C<GetOptionsFromString> was not called in
 list context, a message will be given and C<GetOptionsFromString> will
 return failure.
+
+As with GetOptionsFromArray, a first argument hash reference now
+becomes the second argument.
 
 =head2 Storing options values in a hash
 
@@ -2155,7 +2173,8 @@ it will set variable C<$stdio>.
 A special option 'name' C<< <> >> can be used to designate a subroutine
 to handle non-option arguments. When GetOptions() encounters an
 argument that does not look like an option, it will immediately call this
-subroutine and passes it one parameter: the argument name.
+subroutine and passes it one parameter: the argument name. Well, actually
+it is an object that stringifies to the argument name.
 
 For example:
 
@@ -2567,7 +2586,7 @@ This can be accomplished with a destination routine:
   GetOptions('list=s%' =>
                sub { push(@{$list{$_[1]}}, $_[2]) });
 
-=head1 Trouble Shooting
+=head1 Troubleshooting
 
 =head2 GetOptions does not return a false result when an option is not supplied
 
@@ -2618,7 +2637,7 @@ Johan Vromans <jvromans@squirrel.nl>
 
 =head1 COPYRIGHT AND DISCLAIMER
 
-This program is Copyright 1990,2007 by Johan Vromans.
+This program is Copyright 1990,2010 by Johan Vromans.
 This program is free software; you can redistribute it and/or
 modify it under the terms of the Perl Artistic License or the
 GNU General Public License as published by the Free Software

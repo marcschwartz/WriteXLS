@@ -7,7 +7,7 @@ package Spreadsheet::WriteExcel::Format;
 #
 # Used in conjunction with Spreadsheet::WriteExcel
 #
-# Copyright 2000-2008, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2010, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -24,7 +24,7 @@ use Carp;
 use vars qw($AUTOLOAD $VERSION @ISA);
 @ISA = qw(Exporter);
 
-$VERSION = '2.22';
+$VERSION = '2.37';
 
 ###############################################################################
 #
@@ -304,7 +304,7 @@ sub get_xf {
     $border2       |= $self->{_diag_type}     << 14;
 
 
-    $border3       |= $self->{_top_color};
+    $border3        = $self->{_top_color};
     $border3       |= $self->{_bottom_color}  << 7;
     $border3       |= $self->{_diag_color}    << 14;
     $border3       |= $self->{_diag_border}   << 21;
@@ -808,6 +808,6 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-© MM-MMVIII, John McNamara.
+© MM-MMX, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.

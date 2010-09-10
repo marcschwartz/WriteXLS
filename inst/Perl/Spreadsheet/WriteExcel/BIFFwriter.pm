@@ -7,7 +7,7 @@ package Spreadsheet::WriteExcel::BIFFwriter;
 #
 # Used in conjunction with Spreadsheet::WriteExcel
 #
-# Copyright 2000-2008, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2010, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -24,7 +24,7 @@ use strict;
 use vars qw($VERSION @ISA);
 @ISA = qw(Exporter);
 
-$VERSION = '2.22';
+$VERSION = '2.37';
 
 ###############################################################################
 #
@@ -139,6 +139,7 @@ sub _append {
 #
 # $type = 0x0005, Workbook
 # $type = 0x0010, Worksheet
+# $type = 0x0020, Chart
 #
 # Writes Excel BOF record to indicate the beginning of a stream or
 # sub-stream in the BIFF file.
@@ -310,6 +311,6 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-© MM-MMVIII, John McNamara.
+© MM-MMX, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.

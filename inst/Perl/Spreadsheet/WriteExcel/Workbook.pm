@@ -7,11 +7,10 @@ package Spreadsheet::WriteExcel::Workbook;
 #
 # Used in conjunction with Spreadsheet::WriteExcel
 #
-# Copyright 2000-2008, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2010, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
-
 use Exporter;
 use strict;
 use Carp;
@@ -25,7 +24,7 @@ use Spreadsheet::WriteExcel::Properties ':property_sets';
 use vars qw($VERSION @ISA);
 @ISA = qw(Spreadsheet::WriteExcel::BIFFwriter Exporter);
 
-$VERSION = '2.22';
+$VERSION = '2.37';
 
 ###############################################################################
 #
@@ -50,9 +49,13 @@ sub new {
     $self->{_xf_index}              = 0;
     $self->{_fileclosed}            = 0;
     $self->{_biffsize}              = 0;
-    $self->{_sheetname}             = "Sheet";
+    $self->{_sheet_name}             = 'Sheet';
+    $self->{_chart_name}             = 'Chart';
+    $self->{_sheet_count}           = 0;
+    $self->{_chart_count}           = 0;
     $self->{_url_format}            = '';
     $self->{_codepage}              = 0x04E4;
+    $self->{_country}               = 1;
     $self->{_worksheets}            = [];
     $self->{_sheetnames}            = [];
     $self->{_formats}               = [];
@@ -84,6 +87,8 @@ sub new {
 
     $self->{_add_doc_properties}    = 0;
     $self->{_localtime}             = [localtime()];
+
+    $self->{_defined_names}         = [];
 
     bless $self, $class;
 
@@ -170,7 +175,7 @@ sub new {
 # for example due to write permissions, store the data in memory. This can be
 # slow for large files.
 #
-# TODO: Move this and other methods shared with Worksheet up into BIFFWriter.
+# TODO: Move this and other methods shared with Worksheet up into BIFFwriter.
 #
 sub _initialize {
 
@@ -273,7 +278,7 @@ sub _get_checksum_method {
 
 ###############################################################################
 #
-# _append(), overloaded.
+# _append(), overridden.
 #
 # Store Worksheet data in memory using the base class _append() or to a
 # temporary file, the default.
@@ -446,6 +451,7 @@ sub add_worksheet {
                         \$self->{_str_table},
                          $self->{_1904},
                          $self->{_compatibility},
+                         undef, # Palette. Not used yet. See add_chart().
                     );
 
     my $worksheet = Spreadsheet::WriteExcel::Worksheet->new(@init_data);
@@ -461,6 +467,72 @@ sub add_worksheet {
 
 ###############################################################################
 #
+# add_chart(%args)
+#
+# Create a chart for embedding or as as new sheet.
+#
+#
+sub add_chart {
+
+    my $self     = shift;
+    my %arg      = @_;
+    my $name     = '';
+    my $encoding = 0;
+    my $index    = @{ $self->{_worksheets} };
+
+    # Type must be specified so we can create the required chart instance.
+    my $type = $arg{type};
+    if ( !defined $type ) {
+        croak "Must define chart type in add_chart()";
+    }
+
+    # Ensure that the chart defaults to non embedded.
+    my $embedded = $arg{embedded} ||= 0;
+
+    # Check the worksheet name for non-embedded charts.
+    if ( !$embedded ) {
+        ( $name, $encoding ) =
+          $self->_check_sheetname( $arg{name}, $arg{name_encoding}, 1 );
+    }
+
+    my @init_data = (
+                         $name,
+                         $index,
+                         $encoding,
+                        \$self->{_activesheet},
+                        \$self->{_firstsheet},
+                         $self->{_url_format},
+                         $self->{_parser},
+                         $self->{_tempdir},
+                        \$self->{_str_total},
+                        \$self->{_str_unique},
+                        \$self->{_str_table},
+                         $self->{_1904},
+                         $self->{_compatibility},
+                         $self->{_palette},
+                    );
+
+    my $chart = Spreadsheet::WriteExcel::Chart->factory( $type, @init_data );
+
+    # If the chart isn't embedded let the workbook control it.
+    if ( !$embedded ) {
+        $self->{_worksheets}->[$index] = $chart;    # Store ref for iterator
+        $self->{_sheetnames}->[$index] = $name;     # Store EXTERNSHEET names
+    }
+    else {
+        # Set index to 0 so that the activate() and set_first_sheet() methods
+        # point back to the first worksheet if used for embedded charts.
+        $chart->{_index} = 0;
+
+        $chart->_set_embedded_config_data();
+    }
+
+    return $chart;
+}
+
+
+###############################################################################
+#
 # add_chart_ext($filename, $name)
 #
 # Add an externally created chart.
@@ -471,6 +543,7 @@ sub add_chart_ext {
     my $self     = shift;
     my $filename = $_[0];
     my $index    = @{$self->{_worksheets}};
+    my $type     = 'external';
 
     my ($name, $encoding) = $self->_check_sheetname($_[1], $_[2]);
 
@@ -484,11 +557,11 @@ sub add_chart_ext {
                         \$self->{_firstsheet},
                     );
 
-    my $worksheet = Spreadsheet::WriteExcel::Chart->new(@init_data);
-    $self->{_worksheets}->[$index] = $worksheet;     # Store ref for iterator
+    my $chart = Spreadsheet::WriteExcel::Chart->factory($type, @init_data);
+    $self->{_worksheets}->[$index] = $chart;         # Store ref for iterator
     $self->{_sheetnames}->[$index] = $name;          # Store EXTERNSHEET names
-    $self->{_parser}->set_ext_sheets($name, $index); # Store names in Formula.pm
-    return $worksheet;
+
+    return $chart;
 }
 
 
@@ -504,16 +577,28 @@ sub _check_sheetname {
     my $self            = shift;
     my $name            = $_[0] || "";
     my $encoding        = $_[1] || 0;
+    my $chart           = $_[2] || 0;
     my $limit           = $encoding ? 62 : 31;
     my $invalid_char    = qr([\[\]:*?/\\]);
 
-    # Supply default "Sheet" name if none has been defined.
-    my $index     = @{$self->{_worksheets}};
-    my $sheetname = $self->{_sheetname};
+    # Increment the Sheet/Chart number used for default sheet names below.
+    if ( $chart ) {
+        $self->{_chart_count}++;
+    }
+    else {
+        $self->{_sheet_count}++;
+    }
 
-    if ($name eq "" ) {
-        $name     = $sheetname . ($index+1);
+    # Supply default Sheet/Chart name if none has been defined.
+    if ( $name eq "" ) {
         $encoding = 0;
+
+        if ( $chart ) {
+            $name = $self->{_chart_name} . $self->{_chart_count};
+        }
+        else {
+            $name = $self->{_sheet_name} . $self->{_sheet_count};
+        }
     }
 
 
@@ -749,7 +834,7 @@ sub set_custom_color {
     $index -=8; # Adjust colour index (wingless dragonfly)
 
     # Set the RGB value
-    $$aref[$index] = [$red, $green, $blue, 0];
+    $aref->[$index] = [$red, $green, $blue, 0];
 
     return $index +8;
 }
@@ -865,6 +950,101 @@ sub set_codepage {
 
     $self->{_codepage} = $codepage;
 }
+
+
+###############################################################################
+#
+# set_country()
+#
+# See also the _store_country method. This is used to store the country code.
+# Some non-english versions of Excel may need this set to some value other
+# than 1 = "United States". In general the country code is equal to the
+# international dialling code.
+#
+sub set_country {
+
+    my $self            = shift;
+
+    $self->{_country}   = $_[0] || 1;
+}
+
+
+
+
+
+
+
+###############################################################################
+#
+# define_name()
+#
+# TODO.
+#
+sub define_name {
+
+    my $self        = shift;
+    my $name        = shift;
+    my $formula     = shift;
+    my $encoding    = shift || 0;
+    my $sheet_index = 0;
+    my @tokens;
+
+    my $full_name   = $name;
+
+    if ($name =~ /^(.*)!(.*)$/) {
+        my $sheetname   = $1;
+        $name           = $2;
+        $sheet_index    = 1 + $self->{_parser}->_get_sheet_index($sheetname);
+    }
+
+
+
+    # Strip the = sign at the beginning of the formula string
+    $formula    =~ s(^=)();
+
+    # Parse the formula using the parser in Formula.pm
+    my $parser  = $self->{_parser};
+
+    # In order to raise formula errors from the point of view of the calling
+    # program we use an eval block and re-raise the error from here.
+    #
+    eval { @tokens = $parser->parse_formula($formula) };
+
+    if ($@) {
+        $@ =~ s/\n$//;  # Strip the \n used in the Formula.pm die()
+        croak $@;       # Re-raise the error
+    }
+
+    # Force 2d ranges to be a reference class.
+    s/_ref3d/_ref3dR/     for @tokens;
+    s/_range3d/_range3dR/ for @tokens;
+
+
+    # Parse the tokens into a formula string.
+    $formula = $parser->parse_tokens(@tokens);
+
+
+
+    $full_name = lc $full_name;
+
+    push @{$self->{_defined_names}},   {
+                                            name        => $name,
+                                            encoding    => $encoding,
+                                            sheet_index => $sheet_index,
+                                            formula     => $formula,
+                                        };
+
+    my $index = scalar @{$self->{_defined_names}};
+
+    $parser->set_ext_name($name, $index);
+}
+
+
+
+
+
+
+
 
 
 ###############################################################################
@@ -1036,8 +1216,7 @@ sub _store_workbook {
         @{$self->{_worksheets}}[0]->{_hidden}   = 0;
     }
 
-    # Calculate the number of selected worksheet tabs and call the finalization
-    # methods for each worksheet
+    # Calculate the number of selected sheet tabs and set the active sheet.
     foreach my $sheet (@{$self->{_worksheets}}) {
         $self->{_selected}++ if $sheet->{_selected};
         $sheet->{_active} = 1 if $sheet->{_index} == $self->{_activesheet};
@@ -1062,7 +1241,7 @@ sub _store_workbook {
     foreach my $sheet (@{$self->{_worksheets}}) {
         $self->_store_boundsheet($sheet->{_name},
                                  $sheet->{_offset},
-                                 $sheet->{_type},
+                                 $sheet->{_sheet_type},
                                  $sheet->{_hidden},
                                  $sheet->{_encoding});
     }
@@ -1234,7 +1413,7 @@ sub _calc_sheet_offsets {
 
     foreach my $sheet (@{$self->{_worksheets}}) {
         $sheet->{_offset} = $offset;
-        $sheet->_close($self->{_sheetnames});
+        $sheet->_close();
         $offset += $sheet->{_datasize};
     }
 
@@ -1275,7 +1454,7 @@ sub _calc_mso_sizes {
     # required by each worksheet.
     #
     foreach my $sheet (@{$self->{_worksheets}}) {
-        next unless ref $sheet eq "Spreadsheet::WriteExcel::Worksheet";
+        next unless $sheet->{_sheet_type} == 0x0000; # Ignore charts.
 
         my $num_images     = $sheet->{_num_images} || 0;
         my $image_mso_size = $sheet->{_image_mso_size} || 0;
@@ -1363,7 +1542,7 @@ sub _process_images {
 
 
     foreach my $sheet (@{$self->{_worksheets}}) {
-        next unless $sheet->isa('Spreadsheet::WriteExcel::Worksheet');
+        next unless $sheet->{_sheet_type} == 0x0000; # Ignore charts.
         next unless $sheet->_prepare_images();
 
         my $num_images      = 0;
@@ -1627,7 +1806,7 @@ sub _process_jpg {
         my $marker  = unpack "n", substr $data, $offset,    2;
         my $length  = unpack "n", substr $data, $offset +2, 2;
 
-        if ($marker == 0xFFC0) {
+        if ($marker == 0xFFC0 || $marker == 0xFFC2) {
             $height = unpack "n", substr $data, $offset +5, 2;
             $width  = unpack "n", substr $data, $offset +7, 2;
             last;
@@ -1638,7 +1817,7 @@ sub _process_jpg {
     }
 
     if (not defined $height) {
-        croak "$filename: no size data found in image.\n";
+        croak "$filename: no size data found in jpeg image.\n";
     }
 
     return ($type, $width, $height);
@@ -1659,17 +1838,54 @@ sub _store_all_fonts {
     my $font    = $format->get_font();
 
     # Fonts are 0-indexed. According to the SDK there is no index 4,
-    for (0..3){
+    for (0..3) {
         $self->_append($font);
     }
 
 
-    # Add the font for comments. This isn't connected to any XF format.
-    my $tmp    = Spreadsheet::WriteExcel::Format->new(undef,
-                                                      font => 'Tahoma',
-                                                      size => 8);
-    $font      = $tmp->get_font();
-    $self->_append($font);
+    # Add the default fonts for charts and comments. This aren't connected
+    # to XF formats. Note, the font size, and some other properties of
+    # chart fonts are set in the FBI record of the chart.
+    my $tmp_format;
+
+    # Index 5. Axis numbers.
+    $tmp_format = Spreadsheet::WriteExcel::Format->new(
+        undef,
+        font_only => 1,
+    );
+    $self->_append( $tmp_format->get_font() );
+
+    # Index 6. Series names.
+    $tmp_format = Spreadsheet::WriteExcel::Format->new(
+        undef,
+        font_only => 1,
+    );
+    $self->_append( $tmp_format->get_font() );
+
+    # Index 7. Title.
+    $tmp_format = Spreadsheet::WriteExcel::Format->new(
+        undef,
+        font_only => 1,
+        bold      => 1,
+    );
+    $self->_append( $tmp_format->get_font() );
+
+    # Index 8. Axes.
+    $tmp_format = Spreadsheet::WriteExcel::Format->new(
+        undef,
+        font_only => 1,
+        bold      => 1,
+    );
+    $self->_append( $tmp_format->get_font() );
+
+    # Index 9. Comments.
+    $tmp_format = Spreadsheet::WriteExcel::Format->new(
+        undef,
+        font_only => 1,
+        font      => 'Tahoma',
+        size      => 8,
+    );
+    $self->_append( $tmp_format->get_font() );
 
 
     # Iterate through the XF objects and write a FONT record if it isn't the
@@ -1677,7 +1893,7 @@ sub _store_all_fonts {
     #
     my %fonts;
     my $key;
-    my $index = 6;                  # The first user defined FONT
+    my $index = 10;                  # The first user defined FONT
 
     $key = $format->get_font_key(); # The default font for cell formats.
     $fonts{$key} = 0;               # Index of the default font
@@ -1815,15 +2031,31 @@ sub _store_all_styles {
 sub _store_names {
 
     my $self        = shift;
-    my $index       = 0;
+    my $index;
     my %ext_refs    = %{$self->{_ext_refs}};
 
-    # Create the print area NAME records
-    foreach my $worksheet (@{$self->{_worksheets}}) {
 
+    # Create the user defined names.
+    for my $defined_name (@{$self->{_defined_names}}) {
+
+        $self->_store_name(
+            $defined_name->{name},
+            $defined_name->{encoding},
+            $defined_name->{sheet_index},
+            $defined_name->{formula},
+        );
+    }
+
+    # Sort the worksheets into alphabetical order by name. This is a
+    # requirement for some non-English language Excel patch levels.
+    my @worksheets = @{$self->{_worksheets}};
+       @worksheets = sort { $a->{_name} cmp $b->{_name} } @worksheets;
+
+    # Create the autofilter NAME records
+    foreach my $worksheet (@worksheets) {
+        $index  = $worksheet->{_index};
         my $key = "$index:$index";
         my $ref = $ext_refs{$key};
-        $index++;
 
         # Write a Name record if Autofilter has been defined
         if ($worksheet->{_filter_count}) {
@@ -1838,6 +2070,13 @@ sub _store_names {
                 1, # Hidden
             );
         }
+    }
+
+    # Create the print area NAME records
+    foreach my $worksheet (@worksheets) {
+        $index  = $worksheet->{_index};
+        my $key = "$index:$index";
+        my $ref = $ext_refs{$key};
 
         # Write a Name record if the print area has been defined
         if (defined $worksheet->{_print_rowmin}) {
@@ -1851,13 +2090,11 @@ sub _store_names {
                 $worksheet->{_print_colmax}
             );
         }
-
     }
 
-    $index = 0;
-
     # Create the print title NAME records
-    foreach my $worksheet (@{$self->{_worksheets}}) {
+    foreach my $worksheet (@worksheets) {
+        $index  = $worksheet->{_index};
 
         my $rowmin = $worksheet->{_title_rowmin};
         my $rowmax = $worksheet->{_title_rowmax};
@@ -1865,7 +2102,6 @@ sub _store_names {
         my $colmax = $worksheet->{_title_colmax};
         my $key    = "$index:$index";
         my $ref    = $ext_refs{$key};
-        $index++;
 
         # Determine if row + col, row, col or nothing has been defined
         # and write the appropriate record
@@ -2167,6 +2403,71 @@ sub _store_externsheet {
 
 ###############################################################################
 #
+# _store_name()
+#
+#
+# Store the NAME record used for storing the print area, repeat rows, repeat
+# columns, autofilters and defined names.
+#
+# TODO. This is a more generic version that will replace _store_name_short()
+#       and _store_name_long().
+#
+sub _store_name {
+
+    my $self            = shift;
+
+    my $record          = 0x0018;       # Record identifier
+    my $length;                         # Number of bytes to follow
+
+    my $name            = shift;
+    my $encoding        = shift;
+    my $sheet_index     = shift;
+    my $formula         = shift;
+
+    my $text_length     = length $name;
+    my $formula_length  = length $formula;
+
+    # UTF-16 string length is in characters not bytes.
+    $text_length       /= 2 if $encoding;
+
+
+    my $grbit           = 0x0000;       # Option flags
+    my $shortcut        = 0x00;         # Keyboard shortcut
+    my $ixals           = 0x0000;       # Unused index.
+    my $menu_length     = 0x00;         # Length of cust menu text
+    my $desc_length     = 0x00;         # Length of description text
+    my $help_length     = 0x00;         # Length of help topic text
+    my $status_length   = 0x00;         # Length of status bar text
+
+    # Set grbit built-in flag and the hidden flag for autofilters.
+    if ($text_length == 1) {
+        $grbit = 0x0020 if ord $name == 0x06; # Print area
+        $grbit = 0x0020 if ord $name == 0x07; # Print titles
+        $grbit = 0x0021 if ord $name == 0x0D; # Autofilter
+    }
+
+    my $data            = pack "v", $grbit;
+    $data              .= pack "C", $shortcut;
+    $data              .= pack "C", $text_length;
+    $data              .= pack "v", $formula_length;
+    $data              .= pack "v", $ixals;
+    $data              .= pack "v", $sheet_index;
+    $data              .= pack "C", $menu_length;
+    $data              .= pack "C", $desc_length;
+    $data              .= pack "C", $help_length;
+    $data              .= pack "C", $status_length;
+    $data              .= pack "C", $encoding;
+    $data              .= $name;
+    $data              .= $formula;
+
+    my $header          = pack "vv", $record, length $data;
+
+    $self->_append($header, $data);
+}
+
+
+###############################################################################
+#
 # _store_name_short()
 #
 #
@@ -2366,16 +2667,14 @@ sub _store_codepage {
 #
 # Stores the COUNTRY biff record.
 #
-# Will add setter method for the country codes when/if required.
-#
 sub _store_country {
 
     my $self            = shift;
 
     my $record          = 0x008C;               # Record identifier
     my $length          = 0x0004;               # Number of bytes to follow
-    my $country_default = 1;
-    my $country_win_ini = 1;
+    my $country_default = $self->{_country};
+    my $country_win_ini = $self->{_country};
 
     my $header          = pack("vv", $record, $length);
     my $data            = pack("vv", $country_default, $country_win_ini);
@@ -2427,6 +2726,23 @@ sub _calculate_extern_sizes {
     my $ext_ref_count   = scalar keys %ext_refs;
     my $length          = 0;
     my $index           = 0;
+
+
+    if (@{$self->{_defined_names}}) {
+        my $index   = 0;
+        my $key     = "$index:$index";
+
+        if (not exists $ext_refs{$key}) {
+            $ext_refs{$key} = $ext_ref_count++;
+        }
+    }
+
+    for my $defined_name (@{$self->{_defined_names}}) {
+        $length += 19
+                   + length($defined_name->{name})
+                   + length($defined_name->{formula});
+    }
+
 
     foreach my $worksheet (@{$self->{_worksheets}}) {
 
@@ -3317,6 +3633,6 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-© MM-MMVIII, John McNamara.
+© MM-MMX, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.

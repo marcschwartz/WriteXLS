@@ -7,7 +7,7 @@ package Spreadsheet::WriteExcel::Worksheet;
 #
 # Used in conjunction with Spreadsheet::WriteExcel
 #
-# Copyright 2000-2008, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2010, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -24,7 +24,7 @@ use Spreadsheet::WriteExcel::Formula;
 use vars qw($VERSION @ISA);
 @ISA = qw(Spreadsheet::WriteExcel::BIFFwriter);
 
-$VERSION = '2.23';
+$VERSION = '2.37';
 
 ###############################################################################
 #
@@ -54,8 +54,9 @@ sub new {
     $self->{_str_table}           = $_[10];
     $self->{_1904}                = $_[11];
     $self->{_compatibility}       = $_[12];
+    $self->{_palette}             = $_[13];
 
-    $self->{_type}                = 0x0000;
+    $self->{_sheet_type}          = 0x0000;
     $self->{_ext_sheets}          = [];
     $self->{_using_tmpfile}       = 1;
     $self->{_filehandle}          = "";
@@ -153,8 +154,11 @@ sub new {
 
     $self->{_object_ids}          = [];
     $self->{_images}              = {};
+    $self->{_images_array}        = [];
     $self->{_charts}              = {};
+    $self->{_charts_array}        = [];
     $self->{_comments}            = {};
+    $self->{_comments_array}      = [];
     $self->{_comments_author}     = '';
     $self->{_comments_author_enc} = 0;
     $self->{_comments_visible}    = 0;
@@ -256,8 +260,6 @@ sub _initialize {
 sub _close {
 
     my $self = shift;
-    my $sheetnames = shift;
-    my $num_sheets = scalar @$sheetnames;
 
     ################################################
     # Prepend in reverse order!!
@@ -398,6 +400,10 @@ sub _compatibility_mode {
 # get_name().
 #
 # Retrieve the worksheet name.
+#
+# Note, there is no set_name() method because names are used in formulas and
+# converted to internal indices. Allowing the user to change sheet names
+# after they have been set in add_worksheet() is asking for trouble.
 #
 sub get_name {
 
@@ -568,7 +574,7 @@ sub set_column {
     # hidden columns into account. Also store the column formats.
     #
     my $width  = $data[4] ? 0 : $data[2]; # Set width to zero if col is hidden
-       $width  ||= 0;                 # Ensure width isn't undef.
+       $width  ||= 0;                     # Ensure width isn't undef.
     my $format = $data[3];
 
     my ($firstcol, $lastcol) = @data;
@@ -811,7 +817,7 @@ sub center_horizontally {
 #
 # center_vertically()
 #
-# Center the page horinzontally.
+# Center the page horizontally.
 #
 sub center_vertically {
 
@@ -1824,7 +1830,7 @@ sub _XF {
 
 ###############################################################################
 #
-# _append(), overloaded.
+# _append(), overridden.
 #
 # Store Worksheet data in memory using the base class _append() or to a
 # temporary file, the default.
@@ -2435,7 +2441,7 @@ sub _get_formula_string {
 # Pre-parse a formula. This is used in conjunction with repeat_formula()
 # to repetitively rewrite a formula without re-parsing it.
 #
-sub store_formula{
+sub store_formula {
 
     my $self    = shift;
     my $formula = $_[0];      # The formula text string
@@ -2566,14 +2572,11 @@ sub repeat_formula {
 
     # The STRING record if the formula evaluates to a string.
     my $string  = '';
-       $string  = $self->_encode_formula_result($value) if $is_string;
+       $string  = $self->_get_formula_string($value) if $is_string;
 
 
     # Store the data or write immediately depending on the compatibility mode.
     if ($self->{_compatibility}) {
-        my $string = '';
-           $string = $self->_get_formula_string($value) if $is_string;
-
         $self->{_table}->[$row]->[$col] = $header . $data . $formula . $string;
     }
     else {
@@ -2704,9 +2707,26 @@ sub _write_url_web {
     # Pack the option flags
     my $options     = pack("V", 0x03);
 
-    # Convert URL to a null terminated wchar string
-    $url            = join("\0", split('', $url));
-    $url            = $url . "\0\0\0";
+
+    # URL encoding.
+    my $encoding    = 0;
+
+    # Convert an Utf8 URL type and to a null terminated wchar string.
+    if ($] >= 5.008) {
+        require Encode;
+
+        if (Encode::is_utf8($url)) {
+            $url      = Encode::encode("UTF-16LE", $url);
+            $url     .= "\0\0"; # URL is null terminated.
+            $encoding = 1;
+        }
+    }
+
+    # Convert an Ascii URL type and to a null terminated wchar string.
+    if ($encoding == 0) {
+        $url       .= "\0";
+        $url        = pack 'v*', unpack 'c*', $url;
+    }
 
 
     # Pack the length of the URL
@@ -4680,7 +4700,7 @@ sub _store_table {
         my $col_min = $self->{_dim_colmin};
         my $col_max = $self->{_dim_colmax};
 
-        # Write a user specifed ROW record (modified by set_row()).
+        # Write a user specified ROW record (modified by set_row()).
         if ($self->{_row_data}->{$row}) {
             # Rewrite the min and max cols for user defined row record.
             my $packed_row = $self->{_row_data}->{$row};
@@ -4803,11 +4823,13 @@ sub _store_index {
 
 ###############################################################################
 #
-# embed_chart($row, $col, $filename, $x, $y, $scale_x, $scale_y)
+# insert_chart($row, $col, $chart, $x, $y, $scale_x, $scale_y)
 #
-# Embed an extracted chart in a worksheet.
+# Insert a chart into a worksheet. The $chart argument should be a Chart
+# object or else it is assumed to be a filename of an external binary file.
+# The latter is for backwards compatibility.
 #
-sub embed_chart {
+sub insert_chart {
 
     my $self        = shift;
 
@@ -4824,8 +4846,23 @@ sub embed_chart {
     my $scale_x     = $_[5] || 1;
     my $scale_y     = $_[6] || 1;
 
-    croak "Insufficient arguments in embed_chart()" unless @_ >= 3;
-    croak "Couldn't locate $chart: $!"              unless -e $chart;
+    croak "Insufficient arguments in insert_chart()" unless @_ >= 3;
+
+    if ( ref $chart ) {
+        # Check for a Chart object.
+        croak "Not a Chart object in insert_chart()"
+          unless $chart->isa( 'Spreadsheet::WriteExcel::Chart' );
+
+        # Check that the chart is an embedded style chart.
+        croak "Not a embedded style Chart object in insert_chart()"
+          unless $chart->{_embedded};
+
+    }
+    else {
+
+        # Assume an external bin filename.
+        croak "Couldn't locate $chart in insert_chart(): $!" unless -e $chart;
+    }
 
     $self->{_charts}->{$row}->{$col} =  [
                                            $row,
@@ -4839,6 +4876,8 @@ sub embed_chart {
 
 }
 
+# Older method name for backwards compatibility.
+*embed_chart = *insert_chart;
 
 ###############################################################################
 #
@@ -4968,8 +5007,8 @@ sub _position_object {
     $col_end    = $col_start;
     $row_end    = $row_start;
 
-    $width      = $width  + $x1 -1;
-    $height     = $height + $y1 -1;
+    $width      = $width  + $x1;
+    $height     = $height + $y1;
 
 
     # Subtract the underlying cell widths to find the end cell of the image
@@ -5747,7 +5786,7 @@ sub _store_charts {
     for my $i (0 .. $num_charts-1 ) {
         my $row         =   $charts[$i]->[0];
         my $col         =   $charts[$i]->[1];
-        my $name        =   $charts[$i]->[2];
+        my $chart        =   $charts[$i]->[2];
         my $x_offset    =   $charts[$i]->[3];
         my $y_offset    =   $charts[$i]->[4];
         my $scale_x     =   $charts[$i]->[5];
@@ -5813,7 +5852,7 @@ sub _store_charts {
         }
 
         $self->_store_obj_chart($num_objects+$i+1);
-        $self->_store_chart_binary($name);
+        $self->_store_chart_binary($chart);
     }
 
 
@@ -5833,21 +5872,31 @@ sub _store_charts {
 #
 # _store_chart_binary
 #
-# Add a binary chart object extracted from an Excel file.
+# Add the binary data for a chart. This could either be from a Chart object
+# or from an external binary file (for backwards compatibility).
 #
 sub _store_chart_binary {
 
-    my $self     = shift;
-    my $filename = $_[0];
+    my $self  = shift;
+    my $chart = $_[0];
     my $tmp;
 
-    my $filehandle = FileHandle->new($filename) or
-                     die "Couldn't open $filename in add_chart_ext(): $!.\n";
 
-    binmode($filehandle);
+    if ( ref $chart ) {
+        $chart->_close();
+        my $tmp = $chart->get_data();
+        $self->_append( $tmp );
+    }
+    else {
 
-    while (read($filehandle, $tmp, 4096)) {
-        $self->_append($tmp);
+        my $filehandle = FileHandle->new( $chart )
+          or die "Couldn't open $chart in insert_chart(): $!.\n";
+
+        binmode( $filehandle );
+
+        while ( read( $filehandle, $tmp, 4096 ) ) {
+            $self->_append( $tmp );
+        }
     }
 }
 
@@ -5992,7 +6041,7 @@ sub _store_comments {
         my @vertices    = @{$comments[$i]->[8]};
         my $str_len     = length $str;
            $str_len    /= 2 if $encoding; # Num of chars not bytes.
-        my $formats     = [[0, 5], [$str_len, 0]];
+        my $formats     = [[0, 9], [$str_len, 0]];
 
 
         if ($i == 0 and not $num_objects) {
@@ -6852,11 +6901,14 @@ sub _store_note {
 #
 sub _comment_params {
 
-    my $self    = shift;
+    my $self            = shift;
 
-    my $row     = shift;
-    my $col     = shift;
-    my $string  = shift;
+    my $row             = shift;
+    my $col             = shift;
+    my $string          = shift;
+
+    my $default_width   = 128;
+    my $default_height  = 74;
 
     my %params  = (
                     author          => '',
@@ -6867,8 +6919,8 @@ sub _comment_params {
                     start_col       => undef,
                     start_row       => undef,
                     visible         => undef,
-                    width           => 129,
-                    height          => 75,
+                    width           => $default_width,
+                    height          => $default_height,
                     x_offset        => undef,
                     x_scale         => 1,
                     y_offset        => undef,
@@ -6882,8 +6934,8 @@ sub _comment_params {
 
 
     # Ensure that a width and height have been set.
-    $params{width}  = 129 if not $params{width};
-    $params{height} = 75  if not $params{height};
+    $params{width}  = $default_width  if not $params{width};
+    $params{height} = $default_height if not $params{height};
 
 
     # Check that utf16 strings have an even number of bytes.
@@ -6983,16 +7035,13 @@ sub _comment_params {
     }
 
 
-    # Scale the size of the comment box if required. We scale the width and
-    # height using the relationship d2 =(d1 -1)*s +1, where d is dimension
-    # and s is scale. This gives values that match Excel's behaviour.
-    #
+    # Scale the size of the comment box if required.
     if ($params{x_scale}) {
-        $params{width}  = (($params{width}  -1) * $params{x_scale}) +1;
+        $params{width}  = $params{width}  * $params{x_scale};
     }
 
     if ($params{y_scale}) {
-        $params{height} = (($params{height} -1) * $params{y_scale}) +1;
+        $params{height} = $params{height} * $params{y_scale};
     }
 
 
@@ -7107,7 +7156,7 @@ sub data_validation {
     $param->{value} = $param->{source}  if defined $param->{source};
     $param->{value} = $param->{minimum} if defined $param->{minimum};
 
-    # 'validate' is a required paramter.
+    # 'validate' is a required parameter.
     if (not exists $param->{validate}) {
         carp "Parameter 'validate' is required in data_validation()";
         return -3;
@@ -7142,7 +7191,7 @@ sub data_validation {
     }
 
 
-    # No action is requied for validation type 'any'.
+    # No action is required for validation type 'any'.
     # TODO: we should perhaps store 'any' for message only validations.
     return 0 if $param->{validate} == 0;
 
@@ -7192,7 +7241,7 @@ sub data_validation {
     }
 
 
-    # 'Between' and 'Not between' criterias require 2 values.
+    # 'Between' and 'Not between' criteria require 2 values.
     if ($param->{criteria} == 0 || $param->{criteria} == 1) {
         if (not exists $param->{maximum}) {
             carp "Parameter 'maximum' is required in data_validation() " .
@@ -7227,7 +7276,7 @@ sub data_validation {
     }
 
 
-    # Convert date/times value sif required.
+    # Convert date/times value if required.
     if ($param->{validate} == 4 || $param->{validate} == 5) {
         if ($param->{value} =~ /T/) {
             my $date_time = $self->convert_date_time($param->{value});
@@ -7499,7 +7548,7 @@ sub _pack_dv_string {
 # Pack the formula used in the DV record. This is the same as an cell formula
 # with some additional header information. Note, DV formulas in Excel use
 # relative addressing (R1C1 and ptgXxxN) however we use the Formula.pm's
-# default absoulute addressing (A1 and ptgXxx).
+# default absolute addressing (A1 and ptgXxx).
 #
 sub _pack_dv_formula {
 
@@ -7540,9 +7589,9 @@ sub _pack_dv_formula {
     else {
         # TODO test for non valid ptgs such as Sheet2!A1
     }
-
     # Force 2d ranges to be a reference class.
     s/_range2d/_range2dR/ for @tokens;
+    s/_name/_nameR/       for @tokens;
 
     # Parse the tokens into a formula string.
     $formula = $parser->parse_tokens(@tokens);
@@ -7579,7 +7628,7 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-© MM-MMVIII, John McNamara.
+© MM-MMX, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.
 
