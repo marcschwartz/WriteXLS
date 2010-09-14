@@ -17,9 +17,38 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
                      FreezeRow = 0, FreezeCol = 0,
                      envir = parent.frame())
 {
-  # Check to be sure that each 'x' is a data frame
-  if (!all(sapply(x, function(i) is.data.frame(get(as.character(i), envir = envir)))))
+
+  # If 'x' is a single name, it is either a single data frame or a list of data frames
+  # If 'x' is >1 names in a character vector, it is presumed to be a vector of data frame names.
+  # If not a list name, create a list of data frames from the vector, for consistency in subsequent processing.
+  if (length(x) == 1)
+  {
+    TMP <- get(as.character(x), envir = envir)
+    
+    # is TMP a list and not single data frame    
+    if ((is.list(TMP)) & (!is.data.frame(TMP)))
+    {  
+      DF.LIST <- TMP
+    } else {
+      DF.LIST <- list(TMP)
+      names(DF.LIST) <- x
+    }
+  } else {
+    DF.LIST <- sapply(as.character(x), function(x) get(x, envir = envir))
+    names(DF.LIST) <- x
+  }
+
+  
+  # Check to be sure that each element of DF.LIST is a data frame
+  if (!all(sapply(DF.LIST, is.data.frame)))
     stop("One or more of the objects named in 'x' is not a data frame or does not exist")
+
+  # Additional checks for Excel 2003 limitations
+  # 256 columns
+  # 65,536 rows (including header row)
+  if (!all(sapply(DF.LIST, function(x) (nrow(x) <= 65535) & (ncol(x) <= 256))))
+    stop("One or more of the data frames named in 'x' exceeds 65536 rows or 256 columns")
+
 
   Encoding <- match.arg(Encoding)
   
@@ -38,9 +67,9 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
       return(invisible(FALSE))
     }
      
-    if (length(x) != length(SheetNames))
+    if (length(DF.LIST) != length(SheetNames))
     {  
-      message("The number of 'SheetNames' does not equal the number of data frames in 'x'")
+      message("The number of 'SheetNames' specified does not equal the number of data frames in 'x'")
       return(invisible(FALSE))
     }
 
@@ -55,16 +84,19 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
       message("Invalid characters found in at least one entry in 'SheetNames'. Invalid characters are: []:*?/\\")
       return(invisible(FALSE))
     }
+
+    names(DF.LIST) <- SheetNames
+   
   } else {
-    if (any(duplicated(substr(x, 1, 31))))
+    if (any(duplicated(substr(names(DF.LIST), 1, 31))))
     {
-      message("At least one data frame entry in 'x' is duplicated up to the first 31 characters. Excel worksheets must have unique names.")
+      message("At least one data frame name in 'x' is duplicated up to the first 31 characters. Excel worksheets must have unique names.")
       return(invisible(FALSE))
     }
 
-    if (any(grep("\\[|\\]|\\*|\\?|:|/|\\\\", x)))
+    if (any(grep("\\[|\\]|\\*|\\?|:|/|\\\\", names(DF.LIST))))
     {  
-      message("Invalid characters found in at least one data frame entry in 'x'. Invalid characters are: []:*?/\\")
+      message("Invalid characters found in at least one data frame name in 'x'. Invalid characters are: []:*?/\\")
       return(invisible(FALSE))
     }  
   }
@@ -104,31 +136,25 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
   dir.create(Tmp.Dir, recursive = TRUE)
 
   #  Write Comma Delimited CSV files
-  for (i in as.character(x))
+  for (i in seq(along = DF.LIST))
   {
     if (verbose)
-      cat("Creating CSV File: ", i, "\n")
+      cat("Creating CSV File: ", i, ".csv", "\n", sep = "")
    
-    write.table(get(i, envir = envir), file = paste(Tmp.Dir, "/", i, ".csv", sep = ""),
+    write.table(DF.LIST[[i]], file = paste(Tmp.Dir, "/", i, ".csv", sep = ""),
                 sep = ",", quote = TRUE, na = "", row.names = FALSE)
   }
 
   # Write 'x' (character vector of data frame names) to file
   # appending Tmp.Dir and ".csv" to each x
-  x <- paste(Tmp.Dir, "/", x, ".csv", sep = "")
+  x <- paste(Tmp.Dir, "/", seq(length(DF.LIST)), ".csv", sep = "")
   write(as.matrix(x), file = paste(Tmp.Dir, "/FileNames.txt", sep = ""))
 
-  if (!is.null(SheetNames))
-  {
-    if (verbose)
-      cat("Creating SheetNames.txt\n")
+  if (verbose)
+    cat("Creating SheetNames.txt\n")
     
-    write(as.matrix(SheetNames), file = paste(Tmp.Dir, "/SheetNames.txt", sep = ""))
-    SN <- TRUE
-  } else {
-    SN <- FALSE
-  }
-
+  write(as.matrix(names(DF.LIST)), file = paste(Tmp.Dir, "/SheetNames.txt", sep = ""))
+  
   if (verbose)
     cat("\n")
 
@@ -138,7 +164,6 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
                " ", shQuote(Fn.Path),
                " --CSVPath ", shQuote(Tmp.Dir),
                " --verbose ", verbose,
-               " --SN ", SN,
                " --AdjWidth ", AdjWidth,
                " --AutoFilter ", AutoFilter,
                " --BoldHeaderRow ", BoldHeaderRow,

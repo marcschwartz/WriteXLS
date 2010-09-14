@@ -1,7 +1,7 @@
 \name{WriteXLS}
 \alias{WriteXLS}
 \title{Cross-platform Perl based R function to create Excel 2003 (XLS) files}
-\description{Writes one or more R data frames to an Excel file}
+\description{Writes one or more R data frames to an Excel 2003 file}
 \usage{
   WriteXLS(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl",
            verbose = FALSE, Encoding = c("UTF-8", "latin1"),
@@ -10,8 +10,9 @@
            envir = parent.frame())
 }
 \arguments{
-  \item{x}{A character vector containing the names of one or more R
-        data frames to be exported to the Excel file.}
+  \item{x}{A character vector containing either the names of one or more R
+        data frames, or the single name of a list containing one or more
+	R data frames, to be exported to the Excel file.}
   \item{ExcelFileName}{The name of the Excel file to be created.
         Must be a valid Excel filename. May include an existing path.}
   \item{SheetNames}{A character vector containing the names of each worksheet
@@ -87,18 +88,19 @@
   sufficient free disk space must be available for these files and the Excel
   file at the same time.
 
-  If \code{SheetNames} is specified, a text file called "SheetNames.txt"
-  will be created in the same temporary directory as the CSV files. This
-  file will contain the sheet names, one per line and will be used by
-  the Perl script to name the worksheets in the Excel file.
+  A text file called "SheetNames.txt" will be created in the same
+  temporary directory as the CSV files. This file will contain the sheet
+  names, one per line and will be used by the Perl script to name the
+  worksheets in the Excel file.
 
-  Each worksheet will be named using either the names in \code{SheetNames} or
-  the names of the data frames (up to the first 31 characters, which is an Excel
-  limitation). If any the data frames specified in \code{x} are longer
-  than 31 characters, they will be truncated to 31
-  characters. \code{SheetNames} if specified, will be checked to make
-  sure that all of the entries are less than or equal to 31
-  characters. If not, an error message will be displayed.
+  Each worksheet will be named using either the names in
+  \code{SheetNames}, the names of the data frames in \code{x} or the
+  names of the list elements if \code{x} is a list (up to the first 31
+  characters, which is an Excel limitation). If any the data frame names
+  specified in \code{x} are longer than 31 characters, they will be
+  truncated to 31 characters. \code{SheetNames} if specified, will be
+  checked to make sure that all of the entries are less than or equal to
+  31 characters. If not, an error message will be displayed.
 
   Note that the order of the names in \code{SheetNames} MUST match the
   order of the data frames named in \code{x}.
@@ -179,9 +181,14 @@
 
     WriteXLS(c("iris", "infert", "esoph"), "Example.xls")
 
+    iris.split <- split(iris, iris$Species)
+    WriteXLS("iris.split", "irissplit.xls")
+
     # Clean up and delete XLS files
+    rm(iris.split)
     unlink("iris.xls")
     unlink("Example.xls")
+    unlink("irissplit.xls")
   }
 }
 \keyword{file}

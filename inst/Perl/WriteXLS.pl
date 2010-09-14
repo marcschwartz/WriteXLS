@@ -12,11 +12,10 @@
 # Public License Version 2, June 1991.  
 
 
-# Called as: WriteXLS.pl [--CSVpath] [--verbose] [--SN] [--Encoding] [--AdjWidth] [--AutoFilter] [--BoldHeaderRow] ExcelFileName
+# Called as: WriteXLS.pl [--CSVpath] [--verbose] [--Encoding] [--AdjWidth] [--AutoFilter] [--BoldHeaderRow] ExcelFileName
 
 # CSVpath = Path to CSV Files. Defaults to '.'
 # verbose = Output status messages. TRUE or FALSE. Defaults to FALSE
-# SN = SheetNames flag. TRUE if SheetNames.txt file present, FALSE if not.
 # adj.width = Adjust column widths based upon longest entry in each column. Defaults to FALSE
 # autofilter = Set autofilter for each sheet. Defaults to FALSE
 # bold.header.row = Set bold font for header row. Defaults to FALSE
@@ -48,7 +47,6 @@ use Encode;
 
 my $CSVPath = '.';
 my $verbose = "FALSE";
-my $SN = "FALSE";
 my $AdjWidth = "FALSE";
 my $AutoFilter = "FALSE";
 my $BoldHeaderRow = "FALSE";
@@ -58,7 +56,6 @@ my $FreezeCol = 0;
 
 GetOptions ('CSVpath=s' => \$CSVPath, 
             'verbose=s' => \$verbose,
-            'SN=s' => \$SN,
             'AdjWidth=s' => \$AdjWidth,
             'AutoFilter=s' => \$AutoFilter,
             'BoldHeaderRow=s' => \$BoldHeaderRow,
@@ -87,21 +84,20 @@ die "Problems creating new Excel file: $!" unless defined $XLSFile;
 
 
 ###############################################################################
-# If SheetNames.txt present, read it
+# Get SheetNames.txt contents for Worksheet Names
 #
 
 my @SheetNames = "";
 my $SNInd = 0;
-if ($SN eq "TRUE") {
-  open (SNHANDLE, "$CSVPath/SheetNames.txt") || die "ERROR: cannot open $CSVPath/SheetNames.txt. $!\n";
-  @SheetNames = <SNHANDLE>;
-  close SNHANDLE;  
 
-  # Use chomp() to remove trailing newline ('\n') from each element
-  # which will be a remnant from reading the file
-  # Otherwise the newline will be counted in the length of the worksheet name
-  chomp(@SheetNames);
-}
+open (SNHANDLE, "$CSVPath/SheetNames.txt") || die "ERROR: cannot open $CSVPath/SheetNames.txt. $!\n";
+@SheetNames = <SNHANDLE>;
+close SNHANDLE;  
+
+# Use chomp() to remove trailing newline ('\n') from each element
+# which will be a remnant from reading the file
+# Otherwise the newline will be counted in the length of the worksheet name
+chomp(@SheetNames);
 
 
 
@@ -236,14 +232,8 @@ foreach my $FileName (@FileNames) {
   my $FName = (fileparse ($FileName, '\..*'))[0];
   
   my $SheetName = "";
-  if ($SN eq "TRUE") {
-    $SheetName = $SheetNames[$SNInd]; 
-    $SNInd++;
-  } else {
-    # Only take the first 31 chars, which is the
-    # limit for a worksheet name
-    $SheetName = substr($FName, 0, 31);
-  }
+  $SheetName = $SheetNames[$SNInd]; 
+  $SNInd++;
 
   if ($verbose eq "TRUE") {
     print "Creating New WorkSheet: $SheetName\n\n";
