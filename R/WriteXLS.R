@@ -34,7 +34,7 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
       names(DF.LIST) <- x
     }
   } else {
-    DF.LIST <- sapply(as.character(x), function(x) get(x, envir = envir))
+    DF.LIST <- sapply(as.character(x), function(x) get(x, envir = envir), simplify = FALSE)
     names(DF.LIST) <- x
   }
 
