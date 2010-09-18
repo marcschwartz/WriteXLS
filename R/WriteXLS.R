@@ -12,7 +12,7 @@
 
 
 WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl", verbose = FALSE,
-                     Encoding = c("UTF-8", "latin1"),
+                     Encoding = c("UTF-8", "latin1"), row.names = FALSE,
                      AdjWidth = FALSE, AutoFilter = FALSE, BoldHeaderRow = FALSE,
                      FreezeRow = 0, FreezeCol = 0,
                      envir = parent.frame())
@@ -44,10 +44,10 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
     stop("One or more of the objects named in 'x' is not a data frame or does not exist")
 
   # Additional checks for Excel 2003 limitations
-  # 256 columns
+  # 256 columns, including rownames, if included
   # 65,536 rows (including header row)
   if (!all(sapply(DF.LIST, function(x) (nrow(x) <= 65535) & (ncol(x) <= 256))))
-    stop("One or more of the data frames named in 'x' exceeds 65536 rows or 256 columns")
+    stop("One or more of the data frames named in 'x' exceeds 65535 rows or 256 columns")
 
 
   Encoding <- match.arg(Encoding)
@@ -140,9 +140,15 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
   {
     if (verbose)
       cat("Creating CSV File: ", i, ".csv", "\n", sep = "")
-   
-    write.table(DF.LIST[[i]], file = paste(Tmp.Dir, "/", i, ".csv", sep = ""),
-                sep = ",", quote = TRUE, na = "", row.names = FALSE)
+
+    if (row.names)
+    {
+      write.table(DF.LIST[[i]], file = paste(Tmp.Dir, "/", i, ".csv", sep = ""),
+                  sep = ",", quote = TRUE, na = "", row.names = TRUE, col.names = NA)
+    } else {
+      write.table(DF.LIST[[i]], file = paste(Tmp.Dir, "/", i, ".csv", sep = ""),
+                  sep = ",", quote = TRUE, na = "", row.names = FALSE)
+    }
   }
 
   # Write 'x' (character vector of data frame names) to file

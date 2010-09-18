@@ -5,6 +5,7 @@
 \usage{
   WriteXLS(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl",
            verbose = FALSE, Encoding = c("UTF-8", "latin1"),
+           row.names = FALSE,
            AdjWidth = FALSE, AutoFilter = FALSE, BoldHeaderRow = FALSE,
            FreezeRow = 0, FreezeCol = 0,
            envir = parent.frame())
@@ -27,6 +28,8 @@
         of the Excel file. Default is FALSE.}
   \item{Encoding}{Define the character encoding to be used for the
         exported data frames. Defaults to \code{UTF-8}.}
+  \item{row.names}{If \code{TRUE}, the row names of the data frames are
+        included in the Excel file worksheets.} 
   \item{AdjWidth}{If \code{TRUE}, will adjust the worksheet column
         widths based upon the longest entry in each column. This is
         approximate.}
@@ -116,8 +119,6 @@
   
   The data frame column names will be exported "as is" and will be the first 
   row in the corresponding worksheet.
-
-  The data frame row names will NOT be exported.
 
   UTF-8 encoded content in the data frame should be properly exported using
   the Perl \code{Encode} module by default. If you are operating in a
