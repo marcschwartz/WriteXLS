@@ -11,4 +11,4 @@ Author: Marc Schwartz <marc_schwartz@me.com>
 Maintainer: Marc Schwartz <marc_schwartz@me.com>
 License: GPL-2
 SystemRequirements: Perl, Encode, Text::CSV_XS
-URL: https://marcschwartz@github.com/marcschwartz/WriteXLS.git
+URL: https://github.com/marcschwartz/WriteXLS
