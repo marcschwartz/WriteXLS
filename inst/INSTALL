@@ -1,5 +1,5 @@
 INSTALLING PERL AND RELATED MODULES TO USE WriteXLS
-June 24, 2009
+August 1, 2012
 
 
 BASIC REQUIREMENTS
@@ -180,12 +180,13 @@ the missing Perl modules.
 In order to do this, Apple uses CPAN and provides the 'cpan' command line tool to install and manage Perl modules.
 
 As discussed, you will also need a C compiler and related build tools. This will require the installation
-of the Apple XCode Tools bundle, which is available from the OSX installation DVD provided by Apple with your Mac, 
-or can be downloaded separately from the Apple Developer web site at:
+of the Apple XCode Tools bundle, which can be downloaded separately from the Apple Developer web site at:
 
-  http://developer.apple.com/TOOLS/xcode/
+  https://developer.apple.com/xcode/index.php
 
-You can download the toolset after registering for a free online membership.
+or from the Mac App Store. If you download from the Apple Developer web site, a free membership is required.
+
+Note that recent versions of Xcode no longer include command line tools. These will need to be installed separately from within Xcode by going to Preferences -> Downloads or directly via the Apple Developer web site link above.
 
 Once the tools are installed, you can then install any missing Perl modules by using the command line in a Terminal
 such as:
