@@ -15,7 +15,8 @@
         data frames, or the single name of a list containing one or more
 	R data frames, to be exported to the Excel file.}
   \item{ExcelFileName}{The name of the Excel file to be created.
-        Must be a valid Excel filename. May include an existing path.}
+        Must be a valid Excel filename. May include an existing path.
+        \code{normalizePath} is used to support tilde expansion, etc.}
   \item{SheetNames}{A character vector containing the names of each worksheet
         to be created. If \code{NULL} (the default), the
         names of the dataframes will be used instead. Worksheet names may

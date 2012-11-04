@@ -17,7 +17,11 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
                      FreezeRow = 0, FreezeCol = 0,
                      envir = parent.frame())
 {
+  
+  # Fix up ExcelFileName to support tilde expansion, etc.
+  ExcelFileName <- normalizePath(ExcelFileName, mustWork = FALSE)
 
+  
   # If 'x' is a single name, it is either a single data frame or a list of data frames
   # If 'x' is >1 names in a character vector, it is presumed to be a vector of data frame names.
   # If not a list name, create a list of data frames from the vector, for consistency in subsequent processing.
