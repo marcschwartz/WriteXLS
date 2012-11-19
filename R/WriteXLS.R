@@ -12,7 +12,7 @@
 
 
 WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl", verbose = FALSE,
-                     Encoding = c("UTF-8", "latin1"), row.names = FALSE,
+                     Encoding = c("UTF-8", "latin1"), row.names = FALSE, col.names = TRUE,
                      AdjWidth = FALSE, AutoFilter = FALSE, BoldHeaderRow = FALSE,
                      FreezeRow = 0, FreezeCol = 0,
                      envir = parent.frame())
@@ -145,14 +145,9 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
     if (verbose)
       cat("Creating CSV File: ", i, ".csv", "\n", sep = "")
 
-    if (row.names)
-    {
-      write.table(DF.LIST[[i]], file = paste(Tmp.Dir, "/", i, ".csv", sep = ""),
-                  sep = ",", quote = TRUE, na = "", row.names = TRUE, col.names = NA)
-    } else {
-      write.table(DF.LIST[[i]], file = paste(Tmp.Dir, "/", i, ".csv", sep = ""),
-                  sep = ",", quote = TRUE, na = "", row.names = FALSE)
-    }
+    write.table(DF.LIST[[i]], file = paste(Tmp.Dir, "/", i, ".csv", sep = ""),
+                sep = ",", quote = TRUE, na = "", row.names = row.names,
+                col.names = ifelse(row.names && col.names, NA, col.names))
   }
 
   # Write 'x' (character vector of data frame names) to file

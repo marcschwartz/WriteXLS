@@ -5,7 +5,7 @@
 \usage{
   WriteXLS(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl",
            verbose = FALSE, Encoding = c("UTF-8", "latin1"),
-           row.names = FALSE,
+           row.names = FALSE, col.names = TRUE,
            AdjWidth = FALSE, AutoFilter = FALSE, BoldHeaderRow = FALSE,
            FreezeRow = 0, FreezeCol = 0,
            envir = parent.frame())
@@ -30,7 +30,9 @@
   \item{Encoding}{Define the character encoding to be used for the
         exported data frames. Defaults to \code{UTF-8}.}
   \item{row.names}{If \code{TRUE}, the row names of the data frames are
-        included in the Excel file worksheets.} 
+    included in the Excel file worksheets.}
+  \item{col.names}{If \code{TRUE}, the column names of the data frames are
+    included in the Excel file worksheets.}  
   \item{AdjWidth}{If \code{TRUE}, will adjust the worksheet column
         widths based upon the longest entry in each column. This is
         approximate.}
