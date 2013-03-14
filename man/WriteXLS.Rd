@@ -141,7 +141,7 @@
   directory) for additional details on meeting the requirements for Perl and the 
   additional Perl modules that are necessary for this function to work properly. The file
   includes platform specific recommendations for common scenarios. The path to the package
-  installation directory can be located using \code{.path.package("WriteXLS")} after using
+  installation directory can be located using \code{path.package("WriteXLS")} after using
   \code{library(WriteXLS)}.
 
   A working installed version of Perl must be present in the current 

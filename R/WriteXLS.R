@@ -106,7 +106,7 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
   }
   
   # Get path to WriteXLS.pl
-  Perl.Path <- file.path(.path.package("WriteXLS"), "Perl")
+  Perl.Path <- file.path(path.package("WriteXLS"), "Perl")
   Fn.Path <- file.path(Perl.Path, "WriteXLS.pl")
 
   # Get path for Tmp.Dir for CSV files
