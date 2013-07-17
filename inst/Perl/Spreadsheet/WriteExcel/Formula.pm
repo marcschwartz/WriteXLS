@@ -24,7 +24,7 @@ use Carp;
 use vars qw($VERSION @ISA);
 @ISA = qw(Exporter);
 
-$VERSION = '2.37';
+$VERSION = '2.39';
 
 ###############################################################################
 #
@@ -179,11 +179,11 @@ sub _init_parser {
 
         # Match a function name.
         function:         /[A-Z0-9À-Ü_.]+/ '()'
-                        { ['_func', $item[1]] }
+                        { ['_funcV', $item[1]] }
                         | /[A-Z0-9À-Ü_.]+/ '(' expr ')'
-                        { ['_class', $item[1], $item[3], '_func', $item[1]] }
+                        { ['_class', $item[1], $item[3], '_funcV', $item[1]] }
                         | /[A-Z0-9À-Ü_.]+/ '(' list ')'
-                        { ['_class', $item[1], $item[3], '_func', $item[1]] }
+                        { ['_class', $item[1], $item[3], '_funcV', $item[1]] }
 
         # Match a defined name.
         name:           /[A-Za-z_]\w+/
@@ -345,9 +345,15 @@ sub parse_tokens {
             $token = shift @_;
             $parse_str .= $self->_convert_name($token, $class);
         }
-        elsif ($token eq '_func') {
+        elsif ($token eq '_funcV') {
             $token = shift @_;
             $parse_str .= $self->_convert_function($token, $num_args);
+            pop @class;
+            $num_args = 0; # Reset after use
+        }
+        elsif ($token eq '_func') {
+            $token = shift @_;
+            $parse_str .= $self->_convert_function($token, $num_args, 1);
             pop @class;
             $num_args = 0; # Reset after use
         }
@@ -448,7 +454,7 @@ sub _check_volatile {
 
     for my $i (0..@tokens-1) {
         # If the next token is a function check if it is volatile.
-        if ($tokens[$i] eq '_func' and $functions{$tokens[$i+1]}[3]) {
+        if ($tokens[$i] =~ m/^_func/ and $functions{$tokens[$i+1]}[3]) {
             $volatile = 1;
             last;
         }
@@ -887,7 +893,7 @@ sub set_ext_name {
 #
 # _convert_function()
 #
-# Convert a function to a ptgFunc or ptgFuncVarV depending on the number of
+# Convert a function to a ptgFuncV or ptgFuncVarV depending on the number of
 # args that it takes.
 #
 sub _convert_function {
@@ -895,6 +901,7 @@ sub _convert_function {
     my $self     = shift;
     my $token    = shift;
     my $num_args = shift;
+    my $non_var  = shift;
 
     die "Unknown function $token() in formula\n"
         unless defined $functions{$token}[0];
@@ -908,13 +915,25 @@ sub _convert_function {
             die "Incorrect number of arguments for $token() in formula\n";
         }
         else {
-            return pack("Cv", $ptg{ptgFuncV}, $functions{$token}[0]);
+            if ($non_var) {
+                return pack("Cv", $ptg{ptgFunc},  $functions{$token}[0]);
+            }
+            else {
+                return pack("Cv", $ptg{ptgFuncV}, $functions{$token}[0]);
+            }
         }
     }
 
     # Variable number of args eg. SUM($i,$j,$k, ..).
     if ($args == -1) {
-        return pack "CCv", $ptg{ptgFuncVarV}, $num_args, $functions{$token}[0];
+        if ($non_var) {
+            return pack "CCv", $ptg{ptgFuncVar},
+                                $num_args, $functions{$token}[0];
+        }
+        else {
+            return pack "CCv", $ptg{ptgFuncVarV},
+                                $num_args, $functions{$token}[0];
+        }
     }
 }
 
@@ -1378,6 +1397,7 @@ sub _initialize_hashes {
 
 __END__
 
+=encoding latin1
 
 =head1 NAME
 
@@ -1448,14 +1468,14 @@ The additional tokens are:
     _ref3d      The next token is a 3d cell reference
     _range2d    The next token is a 2d range
     _range3d    The next token is a 3d range
-    _func       The next token is a function
+    _funcV       The next token is a function
     _arg        The next token is the number of args for a function
     _class      The next token is a function name
     _vol        The formula contains a voltile function
 
 The C<_arg> token is generated for all lists but is only used for functions that take a variable number of arguments.
 
-The C<_class> token indicates the start of the arguments to a function. This allows the post-processor to decide the "class" of the ref and range arguments that the function takes. The class can be reference, value or array. Since function calls can be nested, the class variable is stored on a stack in the C<@class> array. The class of the ref or range is then read as the top element of the stack C<$class[-1]>. When a C<_func> is read it pops the class value.
+The C<_class> token indicates the start of the arguments to a function. This allows the post-processor to decide the "class" of the ref and range arguments that the function takes. The class can be reference, value or array. Since function calls can be nested, the class variable is stored on a stack in the C<@class> array. The class of the ref or range is then read as the top element of the stack C<$class[-1]>. When a C<_funcV> is read it pops the class value.
 
 Certain Excel functions such as RAND() and NOW() are designated as volatile and must be recalculated by Excel every time that a cell is updated. Any formulas that contain one of these functions has a specially formatted C<ptgAttr> tag prepended to it to indicate that it is volatile.
 

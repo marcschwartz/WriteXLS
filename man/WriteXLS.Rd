@@ -1,7 +1,9 @@
 \name{WriteXLS}
 \alias{WriteXLS}
-\title{Cross-platform Perl based R function to create Excel 2003 (XLS) files}
-\description{Writes one or more R data frames to an Excel 2003 file}
+\title{Cross-platform Perl based R function to create Excel 2003 (XLS)
+       or Excel 2007 (XLSX) files}
+\description{Writes one or more R data frames to an Excel 2003 or Excel
+             2007 file}
 \usage{
   WriteXLS(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl",
            verbose = FALSE, Encoding = c("UTF-8", "latin1"),
@@ -15,6 +17,9 @@
         data frames, or the single name of a list containing one or more
 	R data frames, to be exported to the Excel file.}
   \item{ExcelFileName}{The name of the Excel file to be created.
+        If the file extension is \emph{.XLS}, an Excel 2003 file will be
+        created. If the file extension is \emph{.XLSX}, an Excel 2007
+	file will be created.
         Must be a valid Excel filename. May include an existing path.
         \code{normalizePath} is used to support tilde expansion, etc.}
   \item{SheetNames}{A character vector containing the names of each worksheet
@@ -55,18 +60,20 @@
 }
 \details{
   This function takes a character vector containing the names of one or
-  more R data frames and writes them to an Excel 2003 spreadsheet file. Each
-  data frame will be written to a separate worksheet in the Excel file.
+  more R data frames and writes them to an Excel 2003 or 2007
+  spreadsheet file. Each data frame will be written to a separate
+  worksheet in the Excel file.
 
   The order of the worksheets created in the Excel file will match the
   order of the entries in \code{x}.
   
-  The actual creation of the Excel file is performed by a Perl script
-  called WriteXLS.pl, which is included with this package.
+  The actual creation of the Excel file is performed by Perl scripts
+  called WriteXLS.pl (for XLS files) and WriteXLSX.pl (for XLSX files),
+  which are included with this package.
 
   Note that the named Excel file, if it already exists, will be
   overwritten and no warning is given. In addition, if the file exists
-  and is open by another application (eg. Excel, OO.org, etc.) you will
+  and is open by another application (eg. Excel, OO.org, LibreOffice, etc.) you will
   likely get an error message regarding the inability to open the file
   and/or that the file is already in use by another application or
   user. Errors can also occur if the file has been marked as
@@ -76,7 +83,7 @@
   There is an intermediate step, where the R data frames are first written
   to CSV files using \code{write.table} before being written
   to the Excel file by the Perl script. \code{tempdir} is used to determine the 
-  current R session temporary directory and a new sub-directory called "WriteXLS"
+  current R session temporary directory and a new sub-directory called \dQuote{WriteXLS}
   will be created there. The CSV files will be written to that directory and
   both the files and the directory will be deleted prior to the function
   terminating normally using \code{on.exit}. It is possible that these 
@@ -128,6 +135,13 @@
   'latin1' based locale (also known as iso-8859-1), set \code{Encoding}
   to 'latin1'.
 
+  If one or more of the data frame columns have been assigned a
+  \emph{comment} attribute using the \code{comment} function, these will
+  be used to create a worksheet cell comment in this first row of
+  the worksheet for each column with this attribute. These can serve to
+  provide descriptive information for each column. This will work for
+  both the Excel 2003 and 2007 file formats.
+
   Note that arguments \code{AdjWidth}, \code{AutoFilter},
   \code{BoldHeaderRow}, \code{FreezeRow} and \code{FreezeCol} will apply
   to ALL worksheets exported.
@@ -150,13 +164,13 @@
   Perl modules required for this function that may not be part of a default
   Perl installation are included with this package. These modules include:
 
-  OLE::Storage_Lite, Parse::RecDescent, Getopt::Long, File::Basename and 
-  Spreadsheet::WriteExcel
+  OLE::Storage_Lite, Getopt::Long, File::Basename, Parse::RecDescent,
+  Spreadsheet::WriteExcel, Excel::Writer::XLSX and Text::CSV_PP
 
-  Note that the required Perl modules Encode and Text::CSV_XS are not included
-  with this package. They are platform specific, contain C source code
-  requiring compilation and installation from CPAN or via your
-  OS/Perl package manager to utilize pre-packaged binary versions.
+  Note that the required Perl module Encode is not included
+  with this package. It is platform specific, requiring local compilation and installation 
+  from CPAN or via your OS package manager. It should however, be included with
+  most current Perl distributions.
   
   To test your Perl installation and verify that all required Perl modules are available,
   use the \code{testPerl} function provided in this package.
@@ -168,19 +182,24 @@
 }
 \references{
   Spreadsheet::WriteExcel Perl Module \url{http://search.cpan.org/dist/Spreadsheet-WriteExcel}
+  
+  Excel::Writer::XLSX Perl Module \url{http://search.cpan.org/~jmcnamara/Excel-Writer-XLSX/}
 
   Excel 2003 Specifications and Limitations \url{http://office.microsoft.com/en-us/excel/HP051992911033.aspx}
 
+  Excel 2007 Specifications and Limitations \url{http://office.microsoft.com/en-us/excel-help/excel-specifications-and-limits-HP010073849.aspx}
+  
   For Perl Unicode Issues \url{http://www.ahinea.com/en/tech/perl-unicode-struggle.html}
 }
 \seealso{
-  \code{\link[utils]{write.table}} and \code{\link[WriteXLS]{testPerl}}
+  \code{\link[utils]{write.table}}, \code{\link[WriteXLS]{testPerl}} and \code{\link[base]{comment}}
 }
 \examples{
   # Only run the examples if Perl and all modules are present
   if (testPerl(verbose = FALSE))
   {
-    # Examples using built-in data frames 
+    # Examples using built-in data frames
+    # Create XLS (Excel 2003) files 
     WriteXLS("iris", "iris.xls")
 
     WriteXLS(c("iris", "infert", "esoph"), "Example.xls")
@@ -188,11 +207,27 @@
     iris.split <- split(iris, iris$Species)
     WriteXLS("iris.split", "irissplit.xls")
 
+    # Example using comment()
+    # Commented cells with have a small red triangle in the
+    # upper right hand corner of the cell. Click on the cell
+    # or place the cursor over the cell to see the pop-up
+    # containing the comment text.
+    # Create an XLSX (Excel 2007) file
+    # Adjust the column widths
+    # Bold the header row
+    comment(iris$Sepal.Length) <- "Length of the sepals (cm)"
+    comment(iris$Sepal.Width) <- "Width of the sepals (cm)"
+    comment(iris$Petal.Length) <- "Length of the petals (cm)"
+    comment(iris$Petal.Width) <- "Width of the petals (cm)"
+    comment(iris$Species) <- "Species of the flowers"
+    WriteXLS("iris", "iriscomments.xlsx", AdjWidth = TRUE, BoldHeaderRow = TRUE)
+
     # Clean up and delete XLS files
     rm(iris.split)
     unlink("iris.xls")
     unlink("Example.xls")
     unlink("irissplit.xls")
+    unlink("iriscomments.xlsx")
   }
 }
 \keyword{file}

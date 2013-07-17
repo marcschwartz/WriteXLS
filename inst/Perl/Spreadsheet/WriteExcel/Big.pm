@@ -24,7 +24,7 @@ use Spreadsheet::WriteExcel::Workbook;
 use vars qw($VERSION @ISA);
 @ISA = qw(Spreadsheet::WriteExcel::Workbook Exporter);
 
-$VERSION = '2.37';
+$VERSION = '2.39';
 
 ###############################################################################
 #
@@ -52,7 +52,7 @@ sub new {
 
 __END__
 
-
+=encoding latin1
 
 =head1 NAME
 

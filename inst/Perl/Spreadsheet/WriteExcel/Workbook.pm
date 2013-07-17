@@ -24,7 +24,7 @@ use Spreadsheet::WriteExcel::Properties ':property_sets';
 use vars qw($VERSION @ISA);
 @ISA = qw(Spreadsheet::WriteExcel::BIFFwriter Exporter);
 
-$VERSION = '2.37';
+$VERSION = '2.39';
 
 ###############################################################################
 #
@@ -3614,6 +3614,7 @@ sub _store_mso_split_menu_colors {
 
 __END__
 
+=encoding latin1
 
 =head1 NAME
 

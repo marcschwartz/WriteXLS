@@ -33,12 +33,13 @@
   Perl modules required for this function that may not be part of a default
   Perl installation are included with this package. These modules include:
 
-  OLE::Storage_Lite, Parse::RecDescent, Getopt::Long, File::Basename and 
-  Spreadsheet::WriteExcel
+  OLE::Storage_Lite, Getopt::Long, File::Basename, Parse::RecDescent,
+  Spreadsheet::WriteExcel, Excel::Writer::XLSX and Text::CSV_PP
 
-  Note that the required Perl modules Encode and Text::CSV_XS are not included
-  with this package.  They are platform specific, requiring local compilation and installation 
-  from CPAN or via your OS package manager.
+  Note that the required Perl module Encode is not included
+  with this package. It is platform specific, requiring local compilation and installation 
+  from CPAN or via your OS package manager. It should be included with
+  most current Perl distributions.
 }
 \author{
   Marc Schwartz \email{marc_schwartz@me.com}

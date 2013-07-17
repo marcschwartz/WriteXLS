@@ -4,10 +4,20 @@
 #
 # Write R data frames to an Excel binary file using a Perl script
 #
-# Copyright 2012, Marc Schwartz <marc_schwartz@me.com>
+# Copyright 2013, Marc Schwartz <marc_schwartz@me.com>
 #
 # This software is distributed under the terms of the GNU General
 # Public License Version 2, June 1991.  
+
+
+
+
+# Excel 2003 specifications and limitations
+# http://office.microsoft.com/en-us/excel/HP051992911033.aspx
+
+# Excel 2007 specifications and limitations
+# http://office.microsoft.com/en-us/excel-help/excel-specifications-and-limits-HP010073849.aspx
+
 
 
 
@@ -20,6 +30,9 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
   
   # Fix up ExcelFileName to support tilde expansion, etc.
   ExcelFileName <- normalizePath(ExcelFileName, mustWork = FALSE)
+
+  # Set flag for XLSX file versus XLS file
+  XLSX <- ifelse(grepl("\\.XLSX$", toupper(ExcelFileName)), TRUE, FALSE)
 
   
   # If 'x' is a single name, it is either a single data frame or a list of data frames
@@ -47,12 +60,21 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
   if (!all(sapply(DF.LIST, is.data.frame)))
     stop("One or more of the objects named in 'x' is not a data frame or does not exist")
 
-  # Additional checks for Excel 2003 limitations
-  # 256 columns, including rownames, if included
-  # 65,536 rows (including header row)
-  if (!all(sapply(DF.LIST, function(x) (nrow(x) <= 65535) & (ncol(x) <= 256))))
-    stop("One or more of the data frames named in 'x' exceeds 65535 rows or 256 columns")
-
+  
+  if (XLSX)
+  {
+    # Additional checks for Excel 2007 limitations
+    # 16,384 columns, including rownames, if included
+    # 1,048,576 rows (including header row)
+    if (!all(sapply(DF.LIST, function(x) (nrow(x) <= 1048576) & (ncol(x) <= 16384))))
+      stop("One or more of the data frames named in 'x' exceeds 1,048,576 rows or 16,384 columns")
+  } else {
+    # Additional checks for Excel 2003 limitations
+    # 256 columns, including rownames, if included
+    # 65,536 rows (including header row)
+    if (!all(sapply(DF.LIST, function(x) (nrow(x) <= 65535) & (ncol(x) <= 256))))
+      stop("One or more of the data frames named in 'x' exceeds 65,535 rows or 256 columns")
+  }
 
   Encoding <- match.arg(Encoding)
   
@@ -105,10 +127,14 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
     }  
   }
   
-  # Get path to WriteXLS.pl
+  # Get path to WriteXLS.pl or WriteXLSX.pl
   Perl.Path <- file.path(path.package("WriteXLS"), "Perl")
-  Fn.Path <- file.path(Perl.Path, "WriteXLS.pl")
 
+  PerlScript <- ifelse(XLSX, "WriteXLSX.pl", "WriteXLS.pl")
+  
+  Fn.Path <- file.path(Perl.Path, PerlScript)
+
+  
   # Get path for Tmp.Dir for CSV files
   Tmp.Dir <- file.path(tempdir(), "WriteXLS")
 
@@ -145,6 +171,29 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
     if (verbose)
       cat("Creating CSV File: ", i, ".csv", "\n", sep = "")
 
+    # Get any column comment attributes and pre-pend to the
+    # data frame as the first row. Non-existing comments
+    # will be NULL, so convert to "" so that there is an
+    # entry for each column and we get a vector, not a list.
+    COMMENTS <- sapply(DF.LIST[[i]],
+                       function(x) ifelse(is.null(attr(x, "comment")),
+                                          "",
+                                          attr(x, "comment")))
+
+    # Need to convert all columns in DF.LIST[[i]] to character
+    # to allow for rbinding of COMMENTS, since columns may be of various types.
+    # Everything is going to be output via write.table() as character anyway.
+    DF.LIST[[i]] <- as.data.frame(lapply(DF.LIST[[i]], as.character), stringsAsFactors = FALSE)
+        
+    # Pre-pend "WRITEXLS COMMENT:" to each comment so that we can differentiate
+    # the comment row from column names, which may or may not be written
+    # out depending upon 'col.names' argument
+    COMMENTS <- paste("WRITEXLS COMMENT:", COMMENTS)
+
+    # rbind() COMMENTS to the data frame as the first row
+    DF.LIST[[i]] <- rbind(COMMENTS, DF.LIST[[i]])
+    
+    # Write out the data frame to the CSV file
     write.table(DF.LIST[[i]], file = paste(Tmp.Dir, "/", i, ".csv", sep = ""),
                 sep = ",", quote = TRUE, na = "", row.names = row.names,
                 col.names = ifelse(row.names && col.names, NA, col.names))
@@ -184,7 +233,8 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
   # This should also raise an error for R CMD check for package testing on R-Forge and CRAN
   if (Result != 0)
   {
-    message("The Perl script 'WriteXLS.pl' failed to run successfully.")
+    err.msg <- paste("The Perl script '", PerlScript, "' failed to run successfully.", sep = "")
+    message(err.msg)
     return(invisible(FALSE))
   } else {
     return(invisible(TRUE))

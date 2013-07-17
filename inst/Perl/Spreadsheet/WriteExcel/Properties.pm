@@ -24,7 +24,7 @@ use Time::Local 'timelocal';
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
 @ISA        = qw(Exporter);
 
-$VERSION    = '2.37';
+$VERSION    = '2.39';
 
 # Set up the exports.
 my @all_functions = qw(
@@ -328,6 +328,7 @@ sub _pack_VT_FILETIME {
 
 __END__
 
+=encoding latin1
 
 =head1 NAME
 

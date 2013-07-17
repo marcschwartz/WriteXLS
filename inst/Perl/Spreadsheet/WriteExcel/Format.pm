@@ -24,7 +24,7 @@ use Carp;
 use vars qw($AUTOLOAD $VERSION @ISA);
 @ISA = qw(Exporter);
 
-$VERSION = '2.37';
+$VERSION = '2.39';
 
 ###############################################################################
 #
@@ -438,7 +438,7 @@ sub get_font_key {
 #
 # get_xf_index()
 #
-# Returns the used by Worksheet->_XF()
+# Returns the index used by Worksheet->_XF()
 #
 sub get_xf_index {
     my $self   = shift;
@@ -789,6 +789,7 @@ sub AUTOLOAD {
 
 __END__
 
+=encoding latin1
 
 =head1 NAME
 
@@ -808,6 +809,6 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-© MM-MMX, John McNamara.
+ï¿½ MM-MMX, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.

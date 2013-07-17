@@ -24,7 +24,7 @@ use FileHandle;
 use vars qw($VERSION @ISA);
 @ISA = qw(Exporter);
 
-$VERSION = '2.37';
+$VERSION = '2.39';
 
 ###############################################################################
 #
@@ -425,6 +425,7 @@ sub _write_padding {
 
 __END__
 
+=encoding latin1
 
 =head1 NAME
 

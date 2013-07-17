@@ -4,7 +4,7 @@
 #
 # Test for the presence of Perl and the required modules
 #
-# Copyright 2012, Marc Schwartz <marc_schwartz@me.com>
+# Copyright 2013, Marc Schwartz <marc_schwartz@me.com>
 #
 # This software is distributed under the terms of the GNU General
 # Public License Version 2, June 1991.  
@@ -17,12 +17,11 @@ testPerl <- function(perl = "perl", verbose = TRUE)
   Perl.Path <- file.path(path.package("WriteXLS"), "Perl")
 
   # Check For Perl first
-  CMD <- paste(perl, "-v")
-  res <- system(CMD, intern = TRUE, ignore.stderr = TRUE)
+  res <- Sys.which(perl)
   
-  if ((length(res) == 0) & (verbose)) {
+  if ((res == "") & (verbose)) {
     message("\nPerl was not found on your system. Either check $PATH if installed or please install Perl.\n",
-         "See the package INSTALL file.\n")
+            paste("For more information see: ", system.file('INSTALL', package='WriteXLS')), "\n")
     
     invisible(FALSE)
   } else {
@@ -34,8 +33,9 @@ testPerl <- function(perl = "perl", verbose = TRUE)
                      "Getopt/Long.pm",
                      "File/Basename.pm",
                      "Spreadsheet/WriteExcel.pm",
+                     "Excel/Writer/XLSX.pm",
                      "Encode.pm",
-                     "Text/CSV_XS.pm")
+                     "Text/CSV_PP.pm")
 
     Found <- rep(FALSE, length(PerlModules))
   
@@ -59,22 +59,23 @@ testPerl <- function(perl = "perl", verbose = TRUE)
     # glob the remaining paths and perl modules
     Level1 <- Sys.glob(file.path(PERLINC.exists, "*.pm"))
     Level2 <- Sys.glob(file.path(PERLINC.exists, "*", "*.pm"))
-    L1L2 <- c(Level1, Level2)
+    Level3 <- Sys.glob(file.path(PERLINC.exists, "*", "*", "*.pm"))    
+    L1L2L3 <- c(Level1, Level2, Level3)
 
     # Search for perl modules
     for (i in seq(along = PerlModules))
     {
-      Found[i] <- any(grep(PerlModules[i], L1L2))
+      Found[i] <- any(grep(PerlModules[i], L1L2L3))
     }
 
     if (!all(Found)) {
       if (verbose)
       {
-        Missing <- paste(sub("\\.pm", "", sub("/", "::", PerlModules[!Found])), collapse = "\n")
+        Missing <- paste(sub("\\.pm", "", gsub("/", "::", PerlModules[!Found])), collapse = "\n")
         message("The following Perl modules were not found on this system:\n")
         message(Missing, "\n")
         message("If you have more than one Perl installation, be sure the correct one was used here.\n")
-        message("Otherwise, please install the missing modules. See the package INSTALL file for more information.\n")
+        message("Otherwise, please install the missing modules. ", paste("For more information see: ", system.file('INSTALL', package='WriteXLS')), "\n")
       }
       invisible(FALSE)
     } else {

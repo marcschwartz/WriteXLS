@@ -2,7 +2,7 @@
 
 ###############################################################################
 #
-# WriteXLS
+# WriteXLSX
 #
 # Write to an Excel binary file.
 #
@@ -21,18 +21,18 @@
 # bold.header.row = Set bold font for header row. Defaults to FALSE
 # Encoding = character encoding. Either "UTF-8" (default) or "latin1" (aka "iso-8859-1")
 
-# Spreadsheet::WriteExcel 
-# http://search.cpan.org/~jmcnamara/Spreadsheet-WriteExcel/lib/Spreadsheet/WriteExcel.pm
+# Excel::Writer:XLSX
+# http://search.cpan.org/~jmcnamara/Excel-Writer-XLSX/
 
-# Excel 2003 specifications and limitations
-# http://office.microsoft.com/en-us/excel/HP051992911033.aspx
+# Excel 2007 specifications and limitations
+# http://office.microsoft.com/en-us/excel-help/excel-specifications-and-limits-HP010073849.aspx
 
 # For unicode issues:
 # http://www.ahinea.com/en/tech/perl-unicode-struggle.html
 
 use strict;
 
-use Spreadsheet::WriteExcel;
+use Excel::Writer::XLSX;
 use Getopt::Long;
 use File::Basename;
 use Text::CSV_PP;
@@ -77,7 +77,7 @@ if ($verbose eq "TRUE") {
   print "Creating Excel File: $ExcelFileName\n\n";
 }
 
-my $XLSFile  = Spreadsheet::WriteExcel->new($ExcelFileName);
+my $XLSFile  = Excel::Writer::XLSX->new($ExcelFileName);
 die "Problems creating new Excel file: $!" unless defined $XLSFile;
 
 
@@ -316,7 +316,7 @@ foreach my $FileName (@FileNames) {
     $WorkSheet->autofilter(0, 0, $Row - 1, $Column - 1);
   }
 
-  if (($FreezeRow != 0) && ($FreezeCol != 0)) {
+  if (($FreezeRow != 0) || ($FreezeCol != 0)) {
     $WorkSheet->freeze_panes($FreezeRow, $FreezeCol);
   }
 }

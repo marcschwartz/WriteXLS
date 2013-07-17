@@ -4,8 +4,8 @@
 # Author          : Johan Vromans
 # Created On      : Tue Sep 11 15:00:12 1990
 # Last Modified By: Johan Vromans
-# Last Modified On: Fri Jul  9 14:47:45 2010
-# Update Count    : 1618
+# Last Modified On: Sun Jun 16 21:43:53 2013
+# Update Count    : 1643
 # Status          : Released
 
 ################ Module Preamble ################
@@ -17,10 +17,10 @@ use 5.004;
 use strict;
 
 use vars qw($VERSION);
-$VERSION        =  2.3802;
+$VERSION        =  2.40;
 # For testing versions only.
 use vars qw($VERSION_STRING);
-$VERSION_STRING = "2.38_02";
+$VERSION_STRING = "2.40";
 
 use Exporter;
 use vars qw(@ISA @EXPORT @EXPORT_OK);
@@ -110,6 +110,7 @@ sub import {
     # Hide one level and call super.
     local $Exporter::ExportLevel = 1;
     push(@syms, qw(&GetOptions)) if @syms; # always export GetOptions
+    $requested_version = 0;
     $pkg->SUPER::import(@syms);
     # And configure.
     Configure(@config) if @config;
@@ -176,6 +177,12 @@ sub configure {
 sub getoptions {
     my ($self) = shift;
 
+    return $self->getoptionsfromarray(\@ARGV, @_);
+}
+
+sub getoptionsfromarray {
+    my ($self) = shift;
+
     # Restore config settings.
     my $save = Getopt::Long::Configure ($self->{settings});
 
@@ -188,7 +195,7 @@ sub getoptions {
 	# be called implicitly here, and again explicitly when we try
 	# to deliver the messages.
 	local ($SIG{__DIE__}) = 'DEFAULT';
-	$ret = Getopt::Long::GetOptions (@_);
+	$ret = Getopt::Long::GetOptionsFromArray (@_);
     };
 
     # Restore saved settings.
@@ -249,7 +256,7 @@ use constant PAT_FLOAT => "[-+]?[0-9._]+(\.[0-9_]+)?([eE][-+]?[0-9_]+)?";
 sub GetOptions(@) {
     # Shift in default array.
     unshift(@_, \@ARGV);
-    # Try to keep caller() and Carp consitent.
+    # Try to keep caller() and Carp consistent.
     goto &GetOptionsFromArray;
 }
 
@@ -661,7 +668,12 @@ sub GetOptionsFromArray(@) {
 		    if ( @$argv ) {
 			if ( ValidValue($ctl, $argv->[0], 1, $argend, $prefix) ) {
 			    $arg = shift(@$argv);
-			    $arg =~ tr/_//d if $ctl->[CTL_TYPE] =~ /^[iIo]$/;
+			    if ( $ctl->[CTL_TYPE] =~ /^[iIo]$/ ) {
+				$arg =~ tr/_//d;
+				$arg = $ctl->[CTL_TYPE] eq 'o' && $arg =~ /^0/
+				  ? oct($arg)
+				  : 0+$arg
+			    }
 			    ($key,$arg) = $arg =~ /^([^=]+)=(.*)/
 			      if $ctl->[CTL_DEST] == CTL_DEST_HASH;
 			    next;
@@ -678,7 +690,12 @@ sub GetOptionsFromArray(@) {
 		# Any more args?
 		if ( @$argv && ValidValue($ctl, $argv->[0], 0, $argend, $prefix) ) {
 		    $arg = shift(@$argv);
-		    $arg =~ tr/_//d if $ctl->[CTL_TYPE] =~ /^[iIo]$/;
+		    if ( $ctl->[CTL_TYPE] =~ /^[iIo]$/ ) {
+			$arg =~ tr/_//d;
+			$arg = $ctl->[CTL_TYPE] eq 'o' && $arg =~ /^0/
+			  ? oct($arg)
+			  : 0+$arg
+		    }
 		    ($key,$arg) = $arg =~ /^([^=]+)=(.*)/
 		      if $ctl->[CTL_DEST] == CTL_DEST_HASH;
 		    next;
@@ -773,6 +790,8 @@ sub ParseOptionSpec ($$) {
 		     (?: \w+[-\w]* )
 		     # Alias names, or "?"
 		     (?: \| (?: \? | \w[-\w]* ) )*
+		     # Aliases
+		     (?: \| (?: [^-|!+=:][^|!+=:]* )? )*
 		   )?
 		   (
 		     # Either modifiers ...
@@ -965,9 +984,9 @@ sub FindOption ($$$$$) {
 	    # See if all matches are for the same option.
 	    my %hit;
 	    foreach ( @hits ) {
-		my $hit = $_;
-		$hit = $opctl->{$hit}->[CTL_CNAME]
-		  if defined $opctl->{$hit}->[CTL_CNAME];
+		my $hit = $opctl->{$_}->[CTL_CNAME]
+		  if defined $opctl->{$_}->[CTL_CNAME];
+		$hit = "no" . $hit if $opctl->{$_}->[CTL_TYPE] eq '!';
 		$hit{$hit} = 1;
 	    }
 	    # Remove auto-supplied options (version, help).
@@ -1344,7 +1363,7 @@ sub Configure (@) {
 	    # Turn into regexp. Needs to be parenthesized!
 	    $genprefix = "(" . quotemeta($genprefix) . ")";
 	    eval { '' =~ /$genprefix/; };
-	    die("Getopt::Long: invalid pattern \"$genprefix\"") if $@;
+	    die("Getopt::Long: invalid pattern \"$genprefix\"\n") if $@;
 	}
 	elsif ( $try =~ /^prefix_pattern=(.+)$/ && $action ) {
 	    $genprefix = $1;
@@ -1352,7 +1371,7 @@ sub Configure (@) {
 	    $genprefix = "(" . $genprefix . ")"
 	      unless $genprefix =~ /^\(.*\)$/;
 	    eval { '' =~ m"$genprefix"; };
-	    die("Getopt::Long: invalid pattern \"$genprefix\"") if $@;
+	    die("Getopt::Long: invalid pattern \"$genprefix\"\n") if $@;
 	}
 	elsif ( $try =~ /^long_prefix_pattern=(.+)$/ && $action ) {
 	    $longprefix = $1;
@@ -1360,13 +1379,13 @@ sub Configure (@) {
 	    $longprefix = "(" . $longprefix . ")"
 	      unless $longprefix =~ /^\(.*\)$/;
 	    eval { '' =~ m"$longprefix"; };
-	    die("Getopt::Long: invalid long prefix pattern \"$longprefix\"") if $@;
+	    die("Getopt::Long: invalid long prefix pattern \"$longprefix\"\n") if $@;
 	}
 	elsif ( $try eq 'debug' ) {
 	    $debug = $action;
 	}
 	else {
-	    die("Getopt::Long: unknown config parameter \"$opt\"")
+	    die("Getopt::Long: unknown or erroneous config parameter \"$opt\"\n")
 	}
     }
     $prevconfig;
@@ -1509,7 +1528,10 @@ Getopt::Long - Extended processing of command line options
 =head1 DESCRIPTION
 
 The Getopt::Long module implements an extended getopt function called
-GetOptions(). This function adheres to the POSIX syntax for command
+GetOptions(). It parses the command line from C<@ARGV>, recognizing
+and removing specified options and their possible values.
+
+This function adheres to the POSIX syntax for command
 line options, with GNU extensions. In general, this means that options
 have long names instead of single letters, and are introduced with a
 double dash "--". Support for bundling of command line options, as was
@@ -1563,11 +1585,7 @@ Getopt::Long is the Perl5 successor of C<newgetopt.pl>. This was the
 first Perl module that provided support for handling the new style of
 command line options, in particular long option names, hence the Perl5
 name Getopt::Long. This module also supports single-character options
-and bundling. Single character options may be any alphabetic
-character, a question mark, and a dash. Long options may consist of a
-series of letters, digits, and dashes. Although this is currently not
-enforced by Getopt::Long, multiple consecutive dashes are not allowed,
-and the option name must not end with a dash.
+and bundling.
 
 To use Getopt::Long from a Perl program, you must include the
 following line in your Perl program:
@@ -1609,8 +1627,8 @@ can contain more than just the option name. The reference to the
 variable is called the option I<destination>.
 
 GetOptions() will return a true value if the command line could be
-processed successfully. Otherwise, it will write error messages to
-STDERR, and return a false result.
+processed successfully. Otherwise, it will write error messages using
+die() and warn(), and return a false result.
 
 =head2 A little bit less simple options
 
@@ -1700,7 +1718,7 @@ destination:
     GetOptions ("library=s@" => \$libfiles);
 
 Used with the example above, C<@libfiles> (or C<@$libfiles>) would
-contain two strings upon completion: C<"lib/srdlib"> and
+contain two strings upon completion: C<"lib/stdlib"> and
 C<"lib/extlib">, in that order. It is also possible to specify that
 only integer or floating point numbers are acceptable values.
 
@@ -1765,7 +1783,7 @@ will call the subroutine with two or three arguments. The first
 argument is the name of the option. (Actually, it is an object that
 stringifies to the name of the option.) For a scalar or array destination,
 the second argument is the value to be stored. For a hash destination,
-the second arguments is the key to the hash, and the third argument
+the second argument is the key to the hash, and the third argument
 the value to be stored. It is up to the subroutine to store the value,
 or do whatever it thinks is appropriate.
 
@@ -1794,6 +1812,15 @@ changed from string to object. This was done to make room for
 extensions and more detailed control. The object stringifies to the
 option name so this change should not introduce compatibility
 problems.
+
+Here is an example of how to access the option name and value from within
+a subroutine:
+
+    GetOptions ('opt=i' => \&handler);
+    sub handler {
+        my ($opt_name, $opt_value) = @_;
+        print("Option name is $opt_name and value is $opt_value\n");
+    }
 
 =head2 Options with multiple names
 
@@ -1939,6 +1966,7 @@ Getopt::Long can be used in an object oriented way as well:
     $p = Getopt::Long::Parser->new;
     $p->configure(...configuration options...);
     if ($p->getoptions(...options descriptions...)) ...
+    if ($p->getoptionsfromarray( \@array, ...options descriptions...)) ...
 
 Configuration options can be passed to the constructor:
 
@@ -2012,7 +2040,8 @@ used to parse options from an arbitrary array.
     use Getopt::Long qw(GetOptionsFromArray);
     $ret = GetOptionsFromArray(\@myopts, ...);
 
-When used like this, the global C<@ARGV> is not touched at all.
+When used like this, options and their possible values are removed
+from C<@myopts>, the global C<@ARGV> is not touched at all.
 
 The following two calls behave identically:
 
@@ -2325,9 +2354,9 @@ especially when mixing long options and bundles. Caveat emptor.
 
 =item ignore_case  (default: enabled)
 
-If enabled, case is ignored when matching long option names. If,
-however, bundling is enabled as well, single character options will be
-treated case-sensitive.
+If enabled, case is ignored when matching option names. If, however,
+bundling is enabled as well, single character options will be treated
+case-sensitive.
 
 With C<ignore_case>, option specifications for options that only
 differ in case, e.g., C<"foo"> and C<"Foo">, will be flagged as
@@ -2517,7 +2546,7 @@ briefly some of these 'features'.
 
 When no destination is specified for an option, GetOptions will store
 the resultant value in a global variable named C<opt_>I<XXX>, where
-I<XXX> is the primary name of this option. When a progam executes
+I<XXX> is the primary name of this option. When a program executes
 under C<use strict> (recommended), these variables must be
 pre-declared with our() or C<use vars>.
 
@@ -2631,13 +2660,21 @@ version 2.13.
     use Getopt::Long;
     GetOptions ("help|?");    # -help and -? will both set $opt_help
 
+Other characters that can't appear in Perl identifiers are also supported
+as aliases with Getopt::Long of at least version 2.39.
+
+As of version 2.32 Getopt::Long provides auto-help, a quick and easy way
+to add the options --help and -? to your program, and handle them.
+
+See C<auto_help> in section L<Configuring Getopt::Long>.
+
 =head1 AUTHOR
 
 Johan Vromans <jvromans@squirrel.nl>
 
 =head1 COPYRIGHT AND DISCLAIMER
 
-This program is Copyright 1990,2010 by Johan Vromans.
+This program is Copyright 1990,2013 by Johan Vromans.
 This program is free software; you can redistribute it and/or
 modify it under the terms of the Perl Artistic License or the
 GNU General Public License as published by the Free Software

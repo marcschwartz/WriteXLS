@@ -24,7 +24,7 @@ use Spreadsheet::WriteExcel::Formula;
 use vars qw($VERSION @ISA);
 @ISA = qw(Spreadsheet::WriteExcel::BIFFwriter);
 
-$VERSION = '2.37';
+$VERSION = '2.39';
 
 ###############################################################################
 #
@@ -1712,7 +1712,7 @@ sub write_col {
 
     # Catch non array refs passed by user.
     if (ref $_[2] ne 'ARRAY') {
-        croak "Not an array ref in call to write_row()$!";
+        croak "Not an array ref in call to write_col()$!";
     }
 
     my $row     = shift;
@@ -2095,12 +2095,11 @@ sub write_number {
 # write_string ($row, $col, $string, $format)
 #
 # Write a string to the specified row and column (zero indexed).
-# NOTE: there is an Excel 5 defined limit of 255 characters.
 # $format is optional.
 # Returns  0 : normal termination
 #         -1 : insufficient number of arguments
 #         -2 : row or column out of range
-#         -3 : long string truncated to 255 chars
+#         -3 : long string truncated to max chars
 #
 sub write_string {
 
@@ -2259,13 +2258,15 @@ sub write_formula {
 
     if (@_ < 3) { return -1 }   # Check the number of args
 
+    return if ! defined $_[2];
+
     my $record    = 0x0006;     # Record identifier
     my $length;                 # Bytes to follow
 
     my $row       = $_[0];      # Zero indexed row
     my $col       = $_[1];      # Zero indexed column
     my $formula   = $_[2];      # The formula text string
-    my $value     = $_[4];      # The formula text string
+    my $value     = $_[4];      # The formula value.
 
 
     my $xf        = _XF($self, $row, $col, $_[3]);  # The cell format
@@ -2519,7 +2520,7 @@ sub repeat_formula {
     # result of the formula by appending a result => $value pair to the end
     # of the arguments.
     my $value = undef;
-    if ($pairs[-2] eq 'result') {
+    if (@pairs && $pairs[-2] eq 'result') {
         $value = pop @pairs;
                  pop @pairs;
     }
@@ -3298,7 +3299,7 @@ sub set_row {
     my $reserved    = 0x0000;               # Reserved
     my $grbit       = 0x0000;               # Option flags
     my $ixfe;                               # XF index
-    my $height      = $_[1];                # Format object
+    my $height      = $_[1];                # Row height
     my $format      = $_[2];                # Format object
     my $hidden      = $_[3] || 0;           # Hidden flag
     my $level       = $_[4] || 0;           # Outline level
@@ -3369,7 +3370,7 @@ sub set_row {
 
 
     # Store the row sizes for use when calculating image vertices.
-    # Also store the column formats.
+    # Also store the row formats.
     $self->{_row_sizes}->{$_[0]}   = $height;
     $self->{_row_formats}->{$_[0]} = $format if defined $format;
 }
@@ -5287,9 +5288,14 @@ sub _store_autofilters {
         # Skip if column doesn't have an active filter.
         next unless $self->{_filter_cols}->{$col};
 
-        # Retrieve the filter tokens and write the autofilter records.
+        # Retrieve the filter tokens
         my @tokens =  @{$self->{_filter_cols}->{$col}};
-        $self->_store_autofilter($col, @tokens);
+
+        # Filter columns are relative to the first column in the filter.
+        my $filter_col = $col - $col1;
+
+        # Write the autofilter records.
+        $self->_store_autofilter($filter_col, @tokens);
     }
 }
 
@@ -5861,8 +5867,12 @@ sub _store_charts {
     # TODO. Won't work for external data refs. Also should use a more direct
     #       method.
     #
-    my $formula = "='$self->{_name}'!A1";
-    $self->store_formula($formula);
+    my $name = $self->{_name};
+    if ($self->{_encoding} && $] >= 5.008) {
+        require Encode;
+        $name = Encode::decode('UTF-16BE', $name);
+    }
+    $self->store_formula("='$name'!A1");
 
     $self->{_object_ids}->[0] = $spid;
 }
@@ -7609,6 +7619,7 @@ sub _pack_dv_formula {
 
 __END__
 
+=encoding latin1
 
 =head1 NAME
 

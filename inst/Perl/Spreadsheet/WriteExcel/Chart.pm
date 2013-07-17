@@ -21,7 +21,7 @@ use Spreadsheet::WriteExcel::Worksheet;
 use vars qw($VERSION @ISA);
 @ISA = qw(Spreadsheet::WriteExcel::Worksheet);
 
-$VERSION = '2.37';
+$VERSION = '2.39';
 
 ###############################################################################
 #
@@ -404,6 +404,9 @@ sub _close {
     # Store the chart BOF.
     $self->_store_bof( 0x0020 );
 
+    # Store the tab color.
+    $self->_store_tab_color();
+
     # Store the page header
     $self->_store_header();
 
@@ -454,6 +457,11 @@ sub _close {
 
     if ( !$self->{_embedded} ) {
         $self->_store_window2();
+    }
+
+    # Store the sheet SCL record.
+    if ( !$self->{_embedded} ) {
+        $self->_store_zoom();
     }
 
     $self->_store_eof();
@@ -802,7 +810,11 @@ sub _store_chart_stream {
 
     $self->_store_begin();
 
-    # Ignore SCL record for now.
+    # Store the chart SCL record.
+    if ( !$self->{_embedded} ) {
+        $self->_store_zoom();
+    }
+
     $self->_store_plotgrowth();
 
     if ( $self->{_chartarea}->{_visible} ) {
@@ -3001,7 +3013,7 @@ If you include it in your program, using the standard import syntax, you can use
     # Then use it as required.
     $chart->add_series(
         categories    => xl_range_formula( 'Sheet1', 1, 9, 0, 0 ),
-        values        => xl_range_formula( 'Sheet1', 1, 9, 1, 1 );,
+        values        => xl_range_formula( 'Sheet1', 1, 9, 1, 1 ),
     );
 
     # Which is the same as:
