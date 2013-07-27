@@ -28,7 +28,8 @@ testPerl <- function(perl = "perl", verbose = TRUE)
     if (verbose)
       message("Perl found.\n")
 
-    PerlModules <- c("OLE/Storage_Lite.pm",
+    PerlModules <- c("Archive/Zip.pm",
+                     "OLE/Storage_Lite.pm",
                      "Parse/RecDescent.pm",
                      "Getopt/Long.pm",
                      "File/Basename.pm",

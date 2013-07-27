@@ -1,5 +1,5 @@
 INSTALLING PERL AND RELATED MODULES TO USE WriteXLS
-July 11, 2013
+July 27, 2013
 
 
 BASIC REQUIREMENTS
@@ -8,6 +8,7 @@ BASIC REQUIREMENTS
 
 2. The following Perl modules:
 
+  Archive::Zip
   Encode
   Excel::Writer::XLSX
   File::Basename

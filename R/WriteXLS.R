@@ -32,7 +32,7 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
   ExcelFileName <- normalizePath(ExcelFileName, mustWork = FALSE)
 
   # Set flag for XLSX file versus XLS file
-  XLSX <- ifelse(grepl("\\.XLSX$", toupper(ExcelFileName)), TRUE, FALSE)
+  XLSX <- grepl("\\.XLSX$", toupper(ExcelFileName))
 
   
   # If 'x' is a single name, it is either a single data frame or a list of data frames

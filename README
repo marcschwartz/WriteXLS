@@ -12,6 +12,8 @@ Description: Cross-platform Perl based R function to create Excel 2003 (XLS) and
              The worksheet name will be the name of the data frame it contains
              or can be specified by the user. 
 
+License: This package is licensed under GPL version 2. See the COPYING file.
+
 For general installation information, please review:
 
   https://github.com/marcschwartz/WriteXLS/blob/master/inst/INSTALL
