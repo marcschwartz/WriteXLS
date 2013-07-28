@@ -164,13 +164,8 @@
   Perl modules required for this function that may not be part of a default
   Perl installation are included with this package. These modules include:
 
-  Archive::Zip, OLE::Storage_Lite, Getopt::Long, File::Basename, Parse::RecDescent,
+  Archive::Zip, OLE::Storage_Lite, Parse::RecDescent,
   Spreadsheet::WriteExcel, Excel::Writer::XLSX and Text::CSV_PP
-
-  Note that the required Perl module Encode is not included
-  with this package. It is platform specific, requiring local compilation and installation 
-  from CPAN or via your OS package manager. It should however, be included with
-  most current Perl distributions.
   
   To test your Perl installation and verify that all required Perl modules are available,
   use the \code{testPerl} function provided in this package.
