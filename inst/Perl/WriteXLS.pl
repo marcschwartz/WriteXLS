@@ -140,8 +140,8 @@ sub autofit_columns {
 
     for my $width (@{$worksheet->{__col_widths}}) {
 
-	$worksheet->set_column($col, $col, $width) if $width;
-	$col++;
+        $worksheet->set_column($col, $col, $width) if $width;
+        $col++;
     }
 }
     
@@ -185,10 +185,10 @@ sub store_string_widths {
     my $string_width = string_width($token);
 
     if (not defined $old_width or $string_width > $old_width) {
-	# You may wish to set a minimum column width as follows.
-	#return undef if $string_width < 10;
+        # You may wish to set a minimum column width as follows.
+        #return undef if $string_width < 10;
 
-	$worksheet->{__col_widths}->[$col] = $string_width;
+        $worksheet->{__col_widths}->[$col] = $string_width;
     }
 
 
@@ -270,22 +270,25 @@ foreach my $FileName (@FileNames) {
       # The row with comments will be 0 if the column names are not 
       # output in the CSV file, 1 otherwise.
       if ($Row <= 1) {
-        if (index($Fields[0], "WRITEXLS COMMENT: ") != -1) {
+        my @commentfields = grep(/WRITEXLS COMMENT: /, @Fields);
+        if (@commentfields > 0) {
           $CommentRow = 1;
 
           foreach my $Fld (@Fields) {
-            $Fld = substr $Fld, 18;
-            if ($Fld ne "") {
-              if ($Encoding eq "UTF-8") {
-                $WorkSheet->write_comment(0, $Column, decode_utf8($Fld));
-	      } else {
-                $WorkSheet->write_comment(0, $Column, decode_utf8("iso-8859-1", $Fld));
+            if (index($Fld, "WRITEXLS COMMENT: ") != -1) {
+              $Fld = substr $Fld, 18;
+              if ($Fld ne "") {
+                if ($Encoding eq "UTF-8") {
+                  $WorkSheet->write_comment(0, $Column, decode_utf8($Fld));
+                } else {
+                  $WorkSheet->write_comment(0, $Column, decode_utf8("iso-8859-1", $Fld));
+                }
               }
             }
 
             $Column++; 
-	  }
-	}
+          }
+        }
       }
 
       if ($CommentRow != 1) {
@@ -294,10 +297,10 @@ foreach my $FileName (@FileNames) {
             $WorkSheet->write($Row, $Column, decode_utf8($Fld));
           } else {
             $WorkSheet->write($Row, $Column, decode_utf8("iso-8859-1", $Fld));
-	  }
+          }
 
           $Column++;
-	}
+        }
 
         $Row++;
       }
