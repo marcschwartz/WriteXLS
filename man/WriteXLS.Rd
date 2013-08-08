@@ -215,7 +215,12 @@
     comment(iris$Petal.Length) <- "Length of the petals (cm)"
     comment(iris$Petal.Width) <- "Width of the petals (cm)"
     comment(iris$Species) <- "Species of the flowers"
-    WriteXLS("iris", "iriscomments.xlsx", AdjWidth = TRUE, BoldHeaderRow = TRUE)
+    WriteXLS("iris", "iriscomments.xlsx",
+             AdjWidth = TRUE, BoldHeaderRow = TRUE)
+
+    # Add row names
+    WriteXLS("iris", "irisrownames.xlsx",
+             AdjWidth = TRUE, BoldHeaderRow = TRUE, row.names = TRUE)
 
     # Clean up and delete XLS files
     rm(iris.split)
@@ -223,6 +228,7 @@
     unlink("Example.xls")
     unlink("irissplit.xls")
     unlink("iriscomments.xlsx")
+    unlink("irisrownames.xlsx")
   }
 }
 \keyword{file}

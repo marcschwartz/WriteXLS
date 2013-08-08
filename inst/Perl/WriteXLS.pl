@@ -267,7 +267,7 @@ foreach my $FileName (@FileNames) {
 
       $Column = 0;
 
-      # The row with comments with be 0 if the column names are not 
+      # The row with comments will be 0 if the column names are not 
       # output in the CSV file, 1 otherwise.
       if ($Row <= 1) {
         if (index($Fields[0], "WRITEXLS COMMENT: ") != -1) {

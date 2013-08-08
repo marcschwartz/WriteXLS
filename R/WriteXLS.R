@@ -183,7 +183,11 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
     # Need to convert all columns in DF.LIST[[i]] to character
     # to allow for rbinding of COMMENTS, since columns may be of various types.
     # Everything is going to be output via write.table() as character anyway.
-    DF.LIST[[i]] <- as.data.frame(lapply(DF.LIST[[i]], as.character), stringsAsFactors = FALSE)
+    # Preserve the rownames from the original DF.LIST, lest they get
+    # re-named to numbers by default.
+    DF.LIST[[i]] <- as.data.frame(lapply(DF.LIST[[i]], as.character),
+                                  stringsAsFactors = FALSE,
+                                  row.names = rownames(DF.LIST[[i]]))
         
     # Pre-pend "WRITEXLS COMMENT:" to each comment so that we can differentiate
     # the comment row from column names, which may or may not be written
@@ -191,7 +195,18 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
     COMMENTS <- paste("WRITEXLS COMMENT:", COMMENTS)
 
     # rbind() COMMENTS to the data frame as the first row
+    # This  may result in a renaming of the DF.LIST[[i]]
+    # rownames after rbind()ing which will get picked up in the Excel
+    # file if row.names = TRUE. (eg. What was row '1' will then be row '2').
+    # Get rownames from DF.LIST[[i]] and reset after rbind()ing.
+    # Set the rowname for the COMMENTS row also, so that if row.names = TRUE,
+    # the rownames will get dumped by write.table() below and the 
+    # the first row gets picked up as the comments row in the Perl code.
+    # The Perl code only checks the first parsed field in the CSV file row and
+    # the rownames will be the first column in each row.
+    RowNames <- c("WRITEXLS COMMENT: ", rownames(DF.LIST[[i]]))    
     DF.LIST[[i]] <- rbind(COMMENTS, DF.LIST[[i]])
+    rownames(DF.LIST[[i]]) <- RowNames
     
     # Write out the data frame to the CSV file
     write.table(DF.LIST[[i]], file = paste(Tmp.Dir, "/", i, ".csv", sep = ""),
