@@ -185,8 +185,10 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
     # Everything is going to be output via write.table() as character anyway.
     # Preserve the rownames from the original DF.LIST, lest they get
     # re-named to numbers by default.
+    # Set 'optional = TRUE' so that make.names() is not used on non-syntactially
+    # correct column names.
     DF.LIST[[i]] <- as.data.frame(lapply(DF.LIST[[i]], as.character),
-                                  stringsAsFactors = FALSE,
+                                  stringsAsFactors = FALSE, optional = TRUE,
                                   row.names = rownames(DF.LIST[[i]]))
         
     # Pre-pend "WRITEXLS COMMENT:" to each comment so that we can differentiate
