@@ -222,6 +222,9 @@
     WriteXLS("iris", "irisrownames.xlsx",
              AdjWidth = TRUE, BoldHeaderRow = TRUE, row.names = TRUE)
 
+    # Use latin1 Encoding
+    WriteXLS("iris", "irisLatin1.xls", Encoding = "latin1")
+
     # Clean up and delete XLS files
     rm(iris.split)
     unlink("iris.xls")
@@ -229,6 +232,7 @@
     unlink("irissplit.xls")
     unlink("iriscomments.xlsx")
     unlink("irisrownames.xlsx")
+    unlink("irisLatin1.xls")
   }
 }
 \keyword{file}

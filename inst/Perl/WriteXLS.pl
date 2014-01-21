@@ -6,7 +6,7 @@
 #
 # Write to an Excel binary file.
 #
-# Copyright 2013, Marc Schwartz <marc_schwartz@me.com>
+# Copyright 2014, Marc Schwartz <marc_schwartz@me.com>
 #
 # This software is distributed under the terms of the GNU General
 # Public License Version 2, June 1991.  
@@ -279,7 +279,7 @@ foreach my $FileName (@FileNames) {
               if ($Encoding eq "UTF-8") {
                 $WorkSheet->write_comment(0, $Column, decode_utf8($Fld));
 	      } else {
-                $WorkSheet->write_comment(0, $Column, decode_utf8("iso-8859-1", $Fld));
+                $WorkSheet->write_comment(0, $Column, decode("iso-8859-1", $Fld));
               }
             }
 
@@ -293,7 +293,7 @@ foreach my $FileName (@FileNames) {
           if ($Encoding eq "UTF-8") {
             $WorkSheet->write($Row, $Column, decode_utf8($Fld));
           } else {
-            $WorkSheet->write($Row, $Column, decode_utf8("iso-8859-1", $Fld));
+            $WorkSheet->write($Row, $Column, decode("iso-8859-1", $Fld));
 	  }
 
           $Column++;
@@ -316,7 +316,7 @@ foreach my $FileName (@FileNames) {
     $WorkSheet->autofilter(0, 0, $Row - 1, $Column - 1);
   }
 
-  if (($FreezeRow != 0) && ($FreezeCol != 0)) {
+  if (($FreezeRow > 0) || ($FreezeCol > 0)) {
     $WorkSheet->freeze_panes($FreezeRow, $FreezeCol);
   }
 }
