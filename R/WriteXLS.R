@@ -128,7 +128,7 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
   }
   
   # Get path to WriteXLS.pl or WriteXLSX.pl
-  Perl.Path <- file.path(path.package("WriteXLS"), "Perl")
+  Perl.Path <- system.file("Perl", package = "WriteXLS")
 
   PerlScript <- ifelse(XLSX, "WriteXLSX.pl", "WriteXLS.pl")
   
