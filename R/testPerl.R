@@ -14,7 +14,7 @@ testPerl <- function(perl = "perl", verbose = TRUE)
   require(WriteXLS)
 
   # Get path to WriteXLS Perl tree
-  Perl.Path <- file.path(path.package("WriteXLS"), "Perl")
+  Perl.Path <- system.file("Perl", package = "WriteXLS")
 
   # Check For Perl first
   res <- Sys.which(perl)
