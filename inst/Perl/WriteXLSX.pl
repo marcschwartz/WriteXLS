@@ -224,7 +224,7 @@ foreach my $FileName (@FileNames) {
   }
 
   # Open CSV File
-  my $csv = Text::CSV_PP->new ({ binary => 1 });
+  my $csv = Text::CSV_PP->new ({ binary => 1, allow_loose_quotes => 1, escape_char => "\\"});
   open (CSVFILE, "$FileName") || die "ERROR: cannot open $FileName. $!\n";
 
   # Create new sheet with filename prefix
