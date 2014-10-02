@@ -4,7 +4,7 @@
 #
 # Write R data frames to an Excel binary file using a Perl script
 #
-# Copyright 2013, Marc Schwartz <marc_schwartz@me.com>
+# Copyright 2014, Marc Schwartz <marc_schwartz@me.com>
 #
 # This software is distributed under the terms of the GNU General
 # Public License Version 2, June 1991.  
@@ -206,9 +206,16 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
     # the first row gets picked up as the comments row in the Perl code.
     # The Perl code only checks the first parsed field in the CSV file row and
     # the rownames will be the first column in each row.
-    RowNames <- c("WRITEXLS COMMENT: ", rownames(DF.LIST[[i]]))    
+    # Also need to handle a 0 row DF.LIST[[i]], as some want to be able
+    # to write out a 0 row data frame to the Excel file. If 0 rows, need to
+    # reset the colnames for DF.LIST[[i]] to the original, as they would be
+    # lost after the rbind(). This will result in the column names only being
+    # written to the worksheet, if col.names = TRUE
+    RowNames <- c("WRITEXLS COMMENT: ", rownames(DF.LIST[[i]]))
+    ColNames <- colnames(DF.LIST[[i]])
     DF.LIST[[i]] <- rbind(COMMENTS, DF.LIST[[i]])
     rownames(DF.LIST[[i]]) <- RowNames
+    colnames(DF.LIST[[i]]) <- ColNames
     
     # Write out the data frame to the CSV file
     write.table(DF.LIST[[i]], file = paste(Tmp.Dir, "/", i, ".csv", sep = ""),

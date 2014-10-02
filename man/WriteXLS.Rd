@@ -224,14 +224,21 @@
     # Use latin1 Encoding
     WriteXLS("iris", "irisLatin1.xls", Encoding = "latin1")
 
+    # Write a 0 row data frame
+    # Worksheet will contain header row only
+    DF0 <- data.frame("A" = numeric(), "B" = numeric(), "C" = numeric())
+    WriteXLS("DF0", "DF0.xls", AdjWidth = TRUE, BoldHeaderRow = TRUE)
+
     # Clean up and delete XLS files
     rm(iris.split)
+    rm(DF0)
     unlink("iris.xls")
     unlink("Example.xls")
     unlink("irissplit.xls")
     unlink("iriscomments.xlsx")
     unlink("irisrownames.xlsx")
     unlink("irisLatin1.xls")
+    unlink("DF0.xls")
   }
 }
 \keyword{file}
