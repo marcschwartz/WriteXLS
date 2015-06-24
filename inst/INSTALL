@@ -1,5 +1,5 @@
 INSTALLING PERL AND RELATED MODULES TO USE WriteXLS
-July 28, 2013
+June 23, 2015
 
 
 BASIC REQUIREMENTS
@@ -9,7 +9,6 @@ BASIC REQUIREMENTS
 2. The following Perl modules:
 
   Archive::Zip
-  Encode
   Excel::Writer::XLSX
   File::Basename
   Getopt::Long
@@ -21,11 +20,11 @@ BASIC REQUIREMENTS
 
 GENERAL COMMENTS
 
-As of this writing, the current release version of Perl is 5.18, however not all computer
-systems are using this version. Some will be using 5.16, 5.14, 5.12 or even earlier
+As of this writing, the current release version of Perl is 5.22, however not all computer
+systems are using this version. Some will be using 5.18, 5.16, 5.14, 5.12 or even earlier
 distributions of Perl.
 
-Encode, File::Basename and Getopt::Long are "Core" Perl modules and should be part of a standard Perl installation.
+File::Basename and Getopt::Long are "Core" Perl modules and should be part of a standard Perl installation.
 
 The other modules may or may not be installed. Archive::Zip, Excel::Writer::XLSX, OLE::Storage_Lite, 
 Parse::RecDescent, Spreadsheet::WriteExcel and Text::CSV_PP are included in the inst/Perl folder in WriteXLS

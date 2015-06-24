@@ -6,7 +6,7 @@
              2007 file}
 \usage{
   WriteXLS(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl",
-           verbose = FALSE, Encoding = c("UTF-8", "latin1"),
+           verbose = FALSE, Encoding = c("UTF-8", "latin1", "cp1252"),
            row.names = FALSE, col.names = TRUE,
            AdjWidth = FALSE, AutoFilter = FALSE, BoldHeaderRow = FALSE,
            FreezeRow = 0, FreezeCol = 0,
@@ -130,10 +130,10 @@
   The data frame column names will be exported "as is" and will be the first 
   row in the corresponding worksheet.
 
-  UTF-8 encoded content in the data frame should be properly exported using
-  the Perl \code{Encode} module by default. If you are operating in a
-  'latin1' based locale (also known as iso-8859-1), set \code{Encoding}
-  to 'latin1'.
+  UTF-8 encoded content in the data frame should be properly exported by
+  default. If you are operating in a 'latin1' based locale (also known
+  as iso-8859-1) or a Windows CP-1252 locale, set \code{Encoding}
+  to 'latin1' or 'cp1252', respectively.
 
   If one or more of the data frame columns have been assigned a
   \emph{comment} attribute using the \code{comment} function, these will
@@ -179,11 +179,11 @@
   
   Excel::Writer::XLSX Perl Module \url{http://search.cpan.org/~jmcnamara/Excel-Writer-XLSX/}
 
-  Excel 2003 Specifications and Limitations \url{http://office.microsoft.com/en-us/excel/HP051992911033.aspx}
-
   Excel 2007 Specifications and Limitations \url{http://office.microsoft.com/en-us/excel-help/excel-specifications-and-limits-HP010073849.aspx}
   
-  For Perl Unicode Issues \url{http://www.ahinea.com/en/tech/perl-unicode-struggle.html}
+  For Perl Unicode Issues
+  \url{http://www.ahinea.com/en/tech/perl-unicode-struggle.html} and/or
+  \url{http://www.perl.com/pub/2012/04/perlunicook-standard-preamble.html}
 }
 \seealso{
   \code{\link[utils]{write.table}}, \code{\link[WriteXLS]{testPerl}} and \code{\link[base]{comment}}

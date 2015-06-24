@@ -6,7 +6,7 @@
 #
 # Write to an Excel binary file.
 #
-# Copyright 2014, Marc Schwartz <marc_schwartz@me.com>
+# Copyright 2015, Marc Schwartz <marc_schwartz@me.com>
 #
 # This software is distributed under the terms of the GNU General
 # Public License Version 2, June 1991.  
@@ -19,7 +19,7 @@
 # adj.width = Adjust column widths based upon longest entry in each column. Defaults to FALSE
 # autofilter = Set autofilter for each sheet. Defaults to FALSE
 # bold.header.row = Set bold font for header row. Defaults to FALSE
-# Encoding = character encoding. Either "UTF-8" (default) or "latin1" (aka "iso-8859-1")
+# Encoding = character encoding. Either "UTF-8" (default) or "latin1" (aka "iso-8859-1") or "cp1252" (Windows)
 
 # Excel::Writer:XLSX
 # http://search.cpan.org/~jmcnamara/Excel-Writer-XLSX/
@@ -29,6 +29,7 @@
 
 # For unicode issues:
 # http://www.ahinea.com/en/tech/perl-unicode-struggle.html
+# http://www.perl.com/pub/2012/04/perlunicook-standard-preamble.html
 
 use strict;
 
@@ -36,7 +37,6 @@ use Excel::Writer::XLSX;
 use Getopt::Long;
 use File::Basename;
 use Text::CSV_PP;
-use Encode;
 
 
 
@@ -68,6 +68,18 @@ my $ExcelFileName = $ARGV[0];
 my $Row = 0;
 my $Column = 0;
 
+my $Encode = "";
+
+if ($Encoding eq "UTF-8") {
+  $Encode = "<:encoding(utf8)";
+} elsif ($Encoding eq "latin1") {
+  $Encode = "<:encoding(latin1)";
+} elsif ($Encoding eq "cp1252") {
+  $Encode = "<:encoding(cp1252)";
+}
+
+
+
 
 ###############################################################################
 # Create Excel XLS File
@@ -90,7 +102,7 @@ die "Problems creating new Excel file: $!" unless defined $XLSFile;
 my @SheetNames = "";
 my $SNInd = 0;
 
-open (SNHANDLE, "$CSVPath/SheetNames.txt") || die "ERROR: cannot open $CSVPath/SheetNames.txt. $!\n";
+open (SNHANDLE, $Encode, "$CSVPath/SheetNames.txt") || die "ERROR: cannot open $CSVPath/SheetNames.txt. $!\n";
 @SheetNames = <SNHANDLE>;
 close SNHANDLE;  
 
@@ -107,7 +119,7 @@ chomp(@SheetNames);
 #
 
 my @FileNames = "";
-open (DFHANDLE, "$CSVPath/FileNames.txt") || die "ERROR: cannot open $CSVPath/FileNames.txt. $!\n";
+open (DFHANDLE, $Encode, "$CSVPath/FileNames.txt") || die "ERROR: cannot open $CSVPath/FileNames.txt. $!\n";
 @FileNames = <DFHANDLE>;
 close DFHANDLE;  
 # Use chomp() to remove trailing newline ('\n') from each element
@@ -225,7 +237,7 @@ foreach my $FileName (@FileNames) {
 
   # Open CSV File
   my $csv = Text::CSV_PP->new ({ binary => 1, allow_loose_quotes => 1, escape_char => "\\"});
-  open (CSVFILE, "$FileName") || die "ERROR: cannot open $FileName. $!\n";
+  open (CSVFILE, $Encode, "$FileName") || die "ERROR: cannot open $FileName. $!\n";
 
   # Create new sheet with filename prefix
   # ($base, $dir, $ext) = fileparse ($FileName, '..*');
@@ -276,11 +288,7 @@ foreach my $FileName (@FileNames) {
           foreach my $Fld (@Fields) {
             $Fld = substr $Fld, 18;
             if ($Fld ne "") {
-              if ($Encoding eq "UTF-8") {
-                $WorkSheet->write_comment(0, $Column, decode_utf8($Fld));
-	      } else {
-                $WorkSheet->write_comment(0, $Column, decode("iso-8859-1", $Fld));
-              }
+              $WorkSheet->write_comment(0, $Column, $Fld);
             }
 
             $Column++; 
@@ -290,18 +298,14 @@ foreach my $FileName (@FileNames) {
 
       if ($CommentRow != 1) {
         foreach my $Fld (@Fields) {
-          if ($Encoding eq "UTF-8") {
-            $WorkSheet->write($Row, $Column, decode_utf8($Fld));
-          } else {
-            $WorkSheet->write($Row, $Column, decode("iso-8859-1", $Fld));
-	  }
+          $WorkSheet->write($Row, $Column, $Fld);
 
-          $Column++;
-	}
-
-        $Row++;
+        $Column++;
       }
 
+      $Row++;
+    }
+      
       $CommentRow = 0;
     }
   }

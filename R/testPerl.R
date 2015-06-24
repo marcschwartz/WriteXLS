@@ -35,7 +35,6 @@ testPerl <- function(perl = "perl", verbose = TRUE)
                      "File/Basename.pm",
                      "Spreadsheet/WriteExcel.pm",
                      "Excel/Writer/XLSX.pm",
-                     "Encode.pm",
                      "Text/CSV_PP.pm")
 
     Found <- rep(FALSE, length(PerlModules))

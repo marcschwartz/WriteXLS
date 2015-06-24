@@ -22,7 +22,7 @@
 
 
 WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl", verbose = FALSE,
-                     Encoding = c("UTF-8", "latin1"), row.names = FALSE, col.names = TRUE,
+                     Encoding = c("UTF-8", "latin1", "cp1252"), row.names = FALSE, col.names = TRUE,
                      AdjWidth = FALSE, AutoFilter = FALSE, BoldHeaderRow = FALSE,
                      FreezeRow = 0, FreezeCol = 0,
                      envir = parent.frame())
