@@ -7,7 +7,7 @@ package Excel::Writer::XLSX::Workbook;
 #
 # Used in conjunction with Excel::Writer::XLSX
 #
-# Copyright 2000-2013, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2015, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -33,7 +33,7 @@ use Excel::Writer::XLSX::Package::XMLwriter;
 use Excel::Writer::XLSX::Utility qw(xl_cell_to_rowcol xl_rowcol_to_cell);
 
 our @ISA     = qw(Excel::Writer::XLSX::Package::XMLwriter);
-our $VERSION = '0.70';
+our $VERSION = '0.84';
 
 
 ###############################################################################
@@ -54,9 +54,11 @@ sub new {
     my $class = shift;
     my $self  = Excel::Writer::XLSX::Package::XMLwriter->new();
 
-    $self->{_filename}           = $_[0] || '';
+    $self->{_filename} = $_[0] || '';
+    my $options = $_[1] || {};
+
     $self->{_tempdir}            = undef;
-    $self->{_1904}               = 0;
+    $self->{_date_1904}          = 0;
     $self->{_activesheet}        = 0;
     $self->{_firstsheet}         = 0;
     $self->{_selected}           = 0;
@@ -92,8 +94,30 @@ sub new {
     $self->{_window_width}       = 16095;
     $self->{_window_height}      = 9660;
     $self->{_tab_ratio}          = 500;
-    $self->{_table_count}        = 0;
+    $self->{_excel2003_style}    = 0;
 
+    $self->{_default_format_properties} = {};
+
+    if ( exists $options->{tempdir} ) {
+        $self->{_tempdir} = $options->{tempdir};
+    }
+
+    if ( exists $options->{date_1904} ) {
+        $self->{_date_1904} = $options->{date_1904};
+    }
+
+    if ( exists $options->{optimization} ) {
+        $self->{_optimization} = $options->{optimization};
+    }
+
+    if ( exists $options->{default_format_properties} ) {
+        $self->{_default_format_properties} =
+          $options->{default_format_properties};
+    }
+
+    if ( exists $options->{excel2003_style} ) {
+        $self->{_excel2003_style} = 1;
+    }
 
     # Structures for the shared strings data.
     $self->{_str_total}  = 0;
@@ -101,12 +125,21 @@ sub new {
     $self->{_str_table}  = {};
     $self->{_str_array}  = [];
 
+    # Formula calculation default settings.
+    $self->{_calc_id}      = 124519;
+    $self->{_calc_mode}    = 'auto';
+    $self->{_calc_on_load} = 1;
+
 
     bless $self, $class;
 
     # Add the default cell format.
-    $self->add_format( xf_index => 0 );
-
+    if ( $self->{_excel2003_style} ) {
+        $self->add_format( xf_index => 0, font_family => 0 );
+    }
+    else {
+        $self->add_format( xf_index => 0 );
+    }
 
     # Check for a filename unless it is an existing filehandle
     if ( not ref $self->{_filename} and $self->{_filename} eq '' ) {
@@ -313,12 +346,11 @@ sub add_worksheet {
         \$self->{_str_unique},
         \$self->{_str_table},
 
-        \$self->{_table_count},
-
-        $self->{_1904},
+        $self->{_date_1904},
         $self->{_palette},
         $self->{_optimization},
         $self->{_tempdir},
+        $self->{_excel2003_style},
 
     );
 
@@ -334,7 +366,7 @@ sub add_worksheet {
 #
 # add_chart( %args )
 #
-# Create a chart for embedding or as as new sheet.
+# Create a chart for embedding or as a new sheet.
 #
 sub add_chart {
 
@@ -372,9 +404,7 @@ sub add_chart {
         \$self->{_str_unique},
         \$self->{_str_table},
 
-        \$self->{_table_count},
-
-        $self->{_1904},
+        $self->{_date_1904},
         $self->{_palette},
         $self->{_optimization},
     );
@@ -485,7 +515,18 @@ sub add_format {
     my $self = shift;
 
     my @init_data =
-      ( \$self->{_xf_format_indices}, \$self->{_dxf_format_indices}, @_ );
+      ( \$self->{_xf_format_indices}, \$self->{_dxf_format_indices} );
+
+    # Change default format style for Excel2003/XLS format.
+    if ( $self->{_excel2003_style} ) {
+        push @init_data, ( font => 'Arial', size => 10, theme => -1 );
+    }
+
+    # Add the default format properties.
+    push @init_data, %{ $self->{_default_format_properties} };
+
+    # Add the user defined properties.
+    push @init_data, @_;
 
     my $format = Excel::Writer::XLSX::Format->new( @init_data );
 
@@ -526,10 +567,10 @@ sub set_1904 {
     my $self = shift;
 
     if ( defined( $_[0] ) ) {
-        $self->{_1904} = $_[0];
+        $self->{_date_1904} = $_[0];
     }
     else {
-        $self->{_1904} = 1;
+        $self->{_date_1904} = 1;
     }
 }
 
@@ -544,7 +585,7 @@ sub get_1904 {
 
     my $self = shift;
 
-    return $self->{_1904};
+    return $self->{_date_1904};
 }
 
 
@@ -726,15 +767,21 @@ sub define_name {
         return -1;
     }
 
-    # Warn if the sheet name contains invalid chars as defined by Excel help.
-    if ( $name !~ m/^[a-zA-Z_\\][a-zA-Z_.]+/ ) {
+    # Warn if the name contains invalid chars as defined by Excel help.
+    if ( $name !~ m/^[\w\\][\w.]*$/ || $name =~ m/^\d/ ) {
         carp "Invalid characters in name '$name' used in defined_name()\n";
         return -1;
     }
 
-    # Warn if the sheet name looks like a cell name.
+    # Warn if the name looks like a cell name.
     if ( $name =~ m/^[a-zA-Z][a-zA-Z]?[a-dA-D]?[0-9]+$/ ) {
         carp "Invalid name '$name' looks like a cell name in defined_name()\n";
+        return -1;
+    }
+
+    # Warn if the name looks like a R1C1.
+    if ( $name =~ m/^[rcRC]$/ || $name =~ m/^[rcRC]\d+[rcRC]\d+$/ ) {
+        carp "Invalid name '$name' like a RC cell ref in defined_name()\n";
         return -1;
     }
 
@@ -798,7 +845,7 @@ sub set_properties {
 #
 sub add_vba_project {
 
-    my $self = shift;
+    my $self        = shift;
     my $vba_project = shift;
 
     croak "No vbaProject.bin specified in add_vba_project()"
@@ -808,6 +855,52 @@ sub add_vba_project {
       unless -e $vba_project;
 
     $self->{_vba_project} = $vba_project;
+}
+
+
+###############################################################################
+#
+# set_vba_name()
+#
+# Set the VBA name for the workbook.
+#
+sub set_vba_name {
+
+    my $self         = shift;
+    my $vba_codemame = shift;
+
+    if ( $vba_codemame ) {
+        $self->{_vba_codename} = $vba_codemame;
+    }
+    else {
+        $self->{_vba_codename} = 'ThisWorkbook';
+    }
+}
+
+
+###############################################################################
+#
+# set_calc_mode()
+#
+# Set the Excel caclcuation mode for the workbook.
+#
+sub set_calc_mode {
+
+    my $self    = shift;
+    my $mode    = shift || 'auto';
+    my $calc_id = shift;
+
+    $self->{_calc_mode} = $mode;
+
+    if ( $mode eq 'manual' ) {
+        $self->{_calc_mode}    = 'manual';
+        $self->{_calc_on_load} = 0;
+    }
+    elsif ( $mode eq 'auto_except_tables' ) {
+        $self->{_calc_mode} = 'autoNoTable';
+    }
+
+    $self->{_calc_id} = $calc_id if defined $calc_id;
 }
 
 
@@ -853,6 +946,9 @@ sub _store_workbook {
 
     # Add cached data to charts.
     $self->_add_chart_data();
+
+    # Prepare the worksheet tables.
+    $self->_prepare_tables();
 
     # Package the workbook.
     $packager->_add_workbook( $self );
@@ -1329,7 +1425,7 @@ sub _prepare_defined_names {
 #
 # Sort internal and user defined names in the same order as used by Excel.
 # This may not be strictly necessary but unsorted elements caused a lot of
-# issues in the the Spreadsheet::WriteExcel binary version. Also makes
+# issues in the Spreadsheet::WriteExcel binary version. Also makes
 # comparison testing easier.
 #
 sub _sort_defined_names {
@@ -1440,45 +1536,108 @@ sub _prepare_drawings {
         my $chart_count = scalar @{ $sheet->{_charts} };
         my $image_count = scalar @{ $sheet->{_images} };
         my $shape_count = scalar @{ $sheet->{_shapes} };
-        next unless ( $chart_count + $image_count + $shape_count );
 
-        $drawing_id++;
+        my $header_image_count = scalar @{ $sheet->{_header_images} };
+        my $footer_image_count = scalar @{ $sheet->{_footer_images} };
+        my $has_drawing        = 0;
 
+
+        # Check that some image or drawing needs to be processed.
+        if (   !$chart_count
+            && !$image_count
+            && !$shape_count
+            && !$header_image_count
+            && !$footer_image_count )
+        {
+            next;
+        }
+
+        # Don't increase the drawing_id header/footer images.
+        if ( $chart_count || $image_count || $shape_count ) {
+            $drawing_id++;
+            $has_drawing = 1;
+        }
+
+        # Prepare the worksheet charts.
         for my $index ( 0 .. $chart_count - 1 ) {
             $chart_ref_id++;
             $sheet->_prepare_chart( $index, $chart_ref_id, $drawing_id );
         }
 
+        # Prepare the worksheet images.
         for my $index ( 0 .. $image_count - 1 ) {
 
             my $filename = $sheet->{_images}->[$index]->[2];
 
-            my ( $image_id, $type, $width, $height, $name ) =
+            my ( $type, $width, $height, $name, $x_dpi, $y_dpi ) =
               $self->_get_image_properties( $filename );
 
             $image_ref_id++;
 
-            $sheet->_prepare_image( $index, $image_ref_id, $drawing_id, $width,
-                $height, $name, $type );
+            $sheet->_prepare_image(
+                $index, $image_ref_id, $drawing_id,
+                $width, $height,       $name,
+                $type,  $x_dpi,        $y_dpi
+            );
         }
 
+        # Prepare the worksheet shapes.
         for my $index ( 0 .. $shape_count - 1 ) {
             $sheet->_prepare_shape( $index, $drawing_id );
         }
 
-        my $drawing = $sheet->{_drawing};
-        push @{ $self->{_drawings} }, $drawing;
+        # Prepare the header images.
+        for my $index ( 0 .. $header_image_count - 1 ) {
+
+            my $filename = $sheet->{_header_images}->[$index]->[0];
+            my $position = $sheet->{_header_images}->[$index]->[1];
+
+            my ( $type, $width, $height, $name, $x_dpi, $y_dpi ) =
+              $self->_get_image_properties( $filename );
+
+            $image_ref_id++;
+
+            $sheet->_prepare_header_image( $image_ref_id, $width, $height,
+                $name, $type, $position, $x_dpi, $y_dpi );
+        }
+
+        # Prepare the footer images.
+        for my $index ( 0 .. $footer_image_count - 1 ) {
+
+            my $filename = $sheet->{_footer_images}->[$index]->[0];
+            my $position = $sheet->{_footer_images}->[$index]->[1];
+
+            my ( $type, $width, $height, $name, $x_dpi, $y_dpi ) =
+              $self->_get_image_properties( $filename );
+
+            $image_ref_id++;
+
+            $sheet->_prepare_header_image( $image_ref_id, $width, $height,
+                $name, $type, $position, $x_dpi, $y_dpi );
+        }
+
+
+        if ( $has_drawing ) {
+            my $drawing = $sheet->{_drawing};
+            push @{ $self->{_drawings} }, $drawing;
+        }
+    }
+
+
+    # Remove charts that were created but not inserted into worksheets.
+    my @chart_data;
+
+    for my $chart ( @{ $self->{_charts} } ) {
+        if ( $chart->{_id} != -1 ) {
+            push @chart_data, $chart;
+        }
     }
 
     # Sort the workbook charts references into the order that the were
     # written from the worksheets above.
-    my @chart_data = @{ $self->{_charts} };
-
     @chart_data = sort { $a->{_id} <=> $b->{_id} } @chart_data;
 
     $self->{_charts} = \@chart_data;
-
-
     $self->{_drawing_count} = $drawing_id;
 }
 
@@ -1495,25 +1654,51 @@ sub _prepare_vml_objects {
     my $comment_id     = 0;
     my $vml_drawing_id = 0;
     my $vml_data_id    = 1;
+    my $vml_header_id  = 0;
     my $vml_shape_id   = 1024;
     my $vml_files      = 0;
     my $comment_files  = 0;
+    my $has_button     = 0;
 
     for my $sheet ( @{ $self->{_worksheets} } ) {
 
-        next unless $sheet->{_has_vml};
-        $vml_files++;
-        $comment_files++ if $sheet->{_has_comments};
-        $comment_id++    if $sheet->{_has_comments};
-        $vml_drawing_id++;
+        next if !$sheet->{_has_vml} and !$sheet->{_has_header_vml};
+        $vml_files = 1;
 
-        my $count =
-          $sheet->_prepare_vml_objects( $vml_data_id, $vml_shape_id,
-            $vml_drawing_id, $comment_id );
 
-        # Each VML file should start with a shape id incremented by 1024.
-        $vml_data_id  += 1 * int(    ( 1024 + $count ) / 1024 );
-        $vml_shape_id += 1024 * int( ( 1024 + $count ) / 1024 );
+        if ( $sheet->{_has_vml} ) {
+
+            $comment_files++ if $sheet->{_has_comments};
+            $comment_id++    if $sheet->{_has_comments};
+            $vml_drawing_id++;
+
+            my $count =
+              $sheet->_prepare_vml_objects( $vml_data_id, $vml_shape_id,
+                $vml_drawing_id, $comment_id );
+
+            # Each VML file should start with a shape id incremented by 1024.
+            $vml_data_id  += 1 * int(    ( 1024 + $count ) / 1024 );
+            $vml_shape_id += 1024 * int( ( 1024 + $count ) / 1024 );
+
+        }
+
+        if ( $sheet->{_has_header_vml} ) {
+            $vml_header_id++;
+            $vml_drawing_id++;
+            $sheet->_prepare_header_vml_objects( $vml_header_id,
+                $vml_drawing_id );
+        }
+
+        # Set the sheet vba_codename if it has a button and the workbook
+        # has a vbaProject binary.
+        if ( $sheet->{_buttons_array} ) {
+            $has_button = 1;
+
+            if ( $self->{_vba_project} && !$sheet->{_vba_codename} ) {
+                $sheet->set_vba_name();
+            }
+        }
+
     }
 
     $self->{_num_vml_files}     = $vml_files;
@@ -1534,6 +1719,36 @@ sub _prepare_vml_objects {
 
         push @{ $self->{_formats} }, $format;
     }
+
+    # Set the workbook vba_codename if one of the sheets has a button and
+    # the workbook has a vbaProject binary.
+    if ( $has_button && $self->{_vba_project} && !$self->{_vba_codename} ) {
+        $self->set_vba_name();
+    }
+}
+
+
+###############################################################################
+#
+# _prepare_tables()
+#
+# Set the table ids for the worksheet tables.
+#
+sub _prepare_tables {
+
+    my $self     = shift;
+    my $table_id = 0;
+
+    for my $sheet ( @{ $self->{_worksheets} } ) {
+
+        my $table_count = scalar @{ $sheet->{_tables} };
+
+        next unless $table_count;
+
+        $sheet->_prepare_tables( $table_id + 1 );
+
+        $table_id += $table_count;
+    }
 }
 
 
@@ -1549,14 +1764,25 @@ sub _add_chart_data {
     my $self = shift;
     my %worksheets;
     my %seen_ranges;
+    my @charts;
 
     # Map worksheet names to worksheet objects.
     for my $worksheet ( @{ $self->{_worksheets} } ) {
         $worksheets{ $worksheet->{_name} } = $worksheet;
     }
 
-    CHART:
+    # Build an array of the worksheet charts including any combined charts.
     for my $chart ( @{ $self->{_charts} } ) {
+        push @charts, $chart;
+
+        if ($chart->{_combined}) {
+            push @charts, $chart->{_combined};
+        }
+    }
+
+
+    CHART:
+    for my $chart ( @charts ) {
 
         RANGE:
         while ( my ( $range, $id ) = each %{ $chart->{_formula_ids} } ) {
@@ -1583,6 +1809,14 @@ sub _add_chart_data {
 
             # Skip if we couldn't parse the formula.
             next RANGE if !defined $sheetname;
+
+            # Handle non-contiguous ranges: (Sheet1!$A$1:$A$2,Sheet1!$A$4:$A$5).
+            # We don't try to parse the ranges. We just return an empty list.
+            if ( $sheetname =~ m/^\([^,]+,/ ) {
+                $chart->{_formula_data}->[$id] = [];
+                $seen_ranges{$range} = [];
+                next RANGE;
+            }
 
             # Die if the name is unknown since it indicates a user error in
             # a chart series formula.
@@ -1732,85 +1966,59 @@ sub _get_image_properties {
     my $self     = shift;
     my $filename = shift;
 
-    my %images_seen;
-    my @image_data;
-    my @previous_images;
-    my $image_id = 1;
     my $type;
     my $width;
     my $height;
+    my $x_dpi = 96;
+    my $y_dpi = 96;
     my $image_name;
 
-    if ( not exists $images_seen{$filename} ) {
 
-        ( $image_name ) = fileparse( $filename );
+    ( $image_name ) = fileparse( $filename );
 
-        # TODO should also match seen images based on checksum.
+    # Open the image file and import the data.
+    my $fh = FileHandle->new( $filename );
+    croak "Couldn't import $filename: $!" unless defined $fh;
+    binmode $fh;
 
-        # Open the image file and import the data.
-        my $fh = FileHandle->new( $filename );
-        croak "Couldn't import $filename: $!" unless defined $fh;
-        binmode $fh;
+    # Slurp the file into a string and do some size calcs.
+    my $data = do { local $/; <$fh> };
+    my $size = length $data;
 
-        # Slurp the file into a string and do some size calcs.
-        my $data = do { local $/; <$fh> };
-        my $size = length $data;
 
-        #my $checksum   = TODO.
+    if ( unpack( 'x A3', $data ) eq 'PNG' ) {
 
-        if ( unpack( 'x A3', $data ) eq 'PNG' ) {
+        # Test for PNGs.
+        ( $type, $width, $height, $x_dpi, $y_dpi ) =
+          $self->_process_png( $data, $filename );
 
-            # Test for PNGs.
-            ( $type, $width, $height ) = $self->_process_png( $data );
-            $self->{_image_types}->{png} = 1;
-        }
-        elsif (
-            ( unpack( 'n', $data ) == 0xFFD8 )
-            && (   ( unpack( 'x6 A4', $data ) eq 'JFIF' )
-                || ( unpack( 'x6 A4', $data ) eq 'Exif' ) )
-          )
-        {
+        $self->{_image_types}->{png} = 1;
+    }
+    elsif ( unpack( 'n', $data ) == 0xFFD8 ) {
 
-            # Test for JFIF and Exif JPEGs.
-            ( $type, $width, $height ) =
-              $self->_process_jpg( $data, $filename );
+        # Test for JPEG files.
+        ( $type, $width, $height, $x_dpi, $y_dpi ) =
+          $self->_process_jpg( $data, $filename );
 
-            $self->{_image_types}->{jpeg} = 1;
+        $self->{_image_types}->{jpeg} = 1;
+    }
+    elsif ( unpack( 'A2', $data ) eq 'BM' ) {
 
-        }
-        elsif ( unpack( 'A2', $data ) eq 'BM' ) {
+        # Test for BMPs.
+        ( $type, $width, $height ) = $self->_process_bmp( $data, $filename );
 
-            # Test for BMPs.
-            ( $type, $width, $height ) =
-              $self->_process_bmp( $data, $filename );
-
-            $self->{_image_types}->{bmp} = 1;
-        }
-        else {
-
-            # TODO. Add Image::Size to support other types.
-            croak "Unsupported image format for file: $filename\n";
-        }
-
-        push @{ $self->{_images} }, [ $filename, $type ];
-
-        # Also store new data for use in duplicate images.
-        push @previous_images, [ $image_id, $type, $width, $height ];
-        $images_seen{$filename} = $image_id++;
-
-        $fh->close;
+        $self->{_image_types}->{bmp} = 1;
     }
     else {
-
-        # We've processed this file already.
-        my $index = $images_seen{$filename} - 1;
-
-        # Increase image reference count.
-        $image_data[$index]->[0]++;
-
+        croak "Unsupported image format for file: $filename\n";
     }
 
-    return ( $image_id, $type, $width, $height, $image_name );
+    push @{ $self->{_images} }, [ $filename, $type ];
+
+
+    $fh->close;
+
+    return ( $type, $width, $height, $image_name, $x_dpi, $y_dpi );
 }
 
 
@@ -1822,13 +2030,52 @@ sub _get_image_properties {
 #
 sub _process_png {
 
-    my $self = shift;
+    my $self     = shift;
+    my $data     = $_[0];
+    my $filename = $_[1];
 
     my $type   = 'png';
-    my $width  = unpack "N", substr $_[0], 16, 4;
-    my $height = unpack "N", substr $_[0], 20, 4;
+    my $width  = 0;
+    my $height = 0;
+    my $x_dpi  = 96;
+    my $y_dpi  = 96;
 
-    return ( $type, $width, $height );
+    my $offset      = 8;
+    my $data_length = length $data;
+
+    # Search through the image data to read the height and width in the
+    # IHDR element. Also read the DPI in the pHYs element.
+    while ( $offset < $data_length ) {
+
+        my $length = unpack "N",  substr $data, $offset + 0, 4;
+        my $type   = unpack "A4", substr $data, $offset + 4, 4;
+
+        if ( $type eq "IHDR" ) {
+            $width  = unpack "N", substr $data, $offset + 8,  4;
+            $height = unpack "N", substr $data, $offset + 12, 4;
+        }
+
+        if ( $type eq "pHYs" ) {
+            my $x_ppu = unpack "N", substr $data, $offset + 8,  4;
+            my $y_ppu = unpack "N", substr $data, $offset + 12, 4;
+            my $units = unpack "C", substr $data, $offset + 16, 1;
+
+            if ( $units == 1 ) {
+                $x_dpi = $x_ppu * 0.0254;
+                $y_dpi = $y_ppu * 0.0254;
+            }
+        }
+
+        $offset = $offset + $length + 12;
+
+        last if $type eq "IEND";
+    }
+
+    if ( not defined $height ) {
+        croak "$filename: no size data found in png image.\n";
+    }
+
+    return ( $type, $width, $height, $x_dpi, $y_dpi );
 }
 
 
@@ -1900,23 +2147,40 @@ sub _process_jpg {
     my $data     = $_[0];
     my $filename = $_[1];
     my $type     = 'jpeg';
+    my $x_dpi    = 96;
+    my $y_dpi    = 96;
     my $width;
     my $height;
 
     my $offset      = 2;
     my $data_length = length $data;
 
-    # Search through the image data to find the 0xFFC0 marker. The height and
-    # width are contained in the data for that sub element.
+    # Search through the image data to read the height and width in the
+    # 0xFFC0/C2 element. Also read the DPI in the 0xFFE0 element.
     while ( $offset < $data_length ) {
 
-        my $marker = unpack "n", substr $data, $offset, 2;
+        my $marker = unpack "n", substr $data, $offset + 0, 2;
         my $length = unpack "n", substr $data, $offset + 2, 2;
 
         if ( $marker == 0xFFC0 || $marker == 0xFFC2 ) {
             $height = unpack "n", substr $data, $offset + 5, 2;
             $width  = unpack "n", substr $data, $offset + 7, 2;
-            last;
+        }
+
+        if ( $marker == 0xFFE0 ) {
+            my $units     = unpack "C", substr $data, $offset + 11, 1;
+            my $x_density = unpack "n", substr $data, $offset + 12, 2;
+            my $y_density = unpack "n", substr $data, $offset + 14, 2;
+
+            if ( $units == 1 ) {
+                $x_dpi = $x_density;
+                $y_dpi = $y_density;
+            }
+
+            if ( $units == 2 ) {
+                $x_dpi = $x_density * 2.54;
+                $y_dpi = $y_density * 2.54;
+            }
         }
 
         $offset = $offset + $length + 2;
@@ -1927,7 +2191,7 @@ sub _process_jpg {
         croak "$filename: no size data found in jpeg image.\n";
     }
 
-    return ( $type, $width, $height );
+    return ( $type, $width, $height, $x_dpi, $y_dpi );
 }
 
 
@@ -2053,7 +2317,7 @@ sub _write_file_version {
 sub _write_workbook_pr {
 
     my $self                   = shift;
-    my $date_1904              = $self->{_1904};
+    my $date_1904              = $self->{_date_1904};
     my $show_ink_annotation    = 0;
     my $auto_compress_pictures = 0;
     my $default_theme_version  = 124226;
@@ -2111,7 +2375,7 @@ sub _write_workbook_view {
     push @attributes, ( tabRatio => $tab_ratio ) if $tab_ratio != 500;
 
     # Store the firstSheet attribute when it isn't the default.
-    push @attributes, ( firstSheet => $first_sheet +1 ) if $first_sheet > 0;
+    push @attributes, ( firstSheet => $first_sheet + 1 ) if $first_sheet > 0;
 
     # Store the activeTab attribute when it isn't the first sheet.
     push @attributes, ( activeTab => $active_tab ) if $active_tab > 0;
@@ -2177,10 +2441,23 @@ sub _write_sheet {
 sub _write_calc_pr {
 
     my $self            = shift;
-    my $calc_id         = 124519;
+    my $calc_id         = $self->{_calc_id};
     my $concurrent_calc = 0;
 
-    my @attributes = ( 'calcId' => $calc_id, );
+    my @attributes = ( calcId => $calc_id );
+
+    if ( $self->{_calc_mode} eq 'manual' ) {
+        push @attributes, 'calcMode'   => 'manual';
+        push @attributes, 'calcOnSave' => 0;
+    }
+    elsif ( $self->{_calc_mode} eq 'autoNoTable' ) {
+        push @attributes, calcMode => 'autoNoTable';
+    }
+
+    if ( $self->{_calc_on_load} ) {
+        push @attributes, 'fullCalcOnLoad' => 1;
+    }
+
 
     $self->xml_empty_tag( 'calcPr', @attributes );
 }
@@ -2312,6 +2589,6 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-(c) MM-MMXIII, John McNamara.
+(c) MM-MMXV, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.

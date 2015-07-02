@@ -8,7 +8,7 @@ package Excel::Writer::XLSX::Chart::Stock;
 #
 # See formatting note in Excel::Writer::XLSX::Chart.
 #
-# Copyright 2000-2013, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2015, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -22,7 +22,7 @@ use Carp;
 use Excel::Writer::XLSX::Chart;
 
 our @ISA     = qw(Excel::Writer::XLSX::Chart);
-our $VERSION = '0.70';
+our $VERSION = '0.84';
 
 
 ###############################################################################
@@ -34,14 +34,28 @@ sub new {
 
     my $class = shift;
     my $self  = Excel::Writer::XLSX::Chart->new( @_ );
-    $self->{_show_crosses} = 0;
-    $self->{_hi_low_lines} = {};
+    $self->{_show_crosses}  = 0;
+    $self->{_hi_low_lines}  = {};
+    $self->{_date_category} = 1;
 
     # Override and reset the default axis values.
     $self->{_x_axis}->{_defaults}->{num_format}  = 'dd/mm/yyyy';
     $self->{_x2_axis}->{_defaults}->{num_format} = 'dd/mm/yyyy';
     $self->set_x_axis();
     $self->set_x2_axis();
+
+    # Set the available data label positions for this chart type.
+    $self->{_label_position_default} = 'right';
+    $self->{_label_positions} = {
+        center      => 'ctr',
+        right       => 'r',
+        left        => 'l',
+        above       => 't',
+        below       => 'b',
+        # For backward compatibility.
+        top         => 't',
+        bottom      => 'b',
+    };
 
     bless $self, $class;
     return $self;
@@ -109,62 +123,6 @@ sub _write_stock_chart {
     $self->_write_axis_ids( %args );
 
     $self->xml_end_tag( 'c:stockChart' );
-}
-
-
-##############################################################################
-#
-# _write_plot_area()
-#
-# Overridden to use _write_date_axis() instead of _write_cat_axis().
-#
-sub _write_plot_area {
-
-    my $self = shift;
-
-    $self->xml_start_tag( 'c:plotArea' );
-
-    # Write the c:layout element.
-    $self->_write_layout();
-
-    # TODO: (for JMCNAMARA todo :)
-    # foreach my $chart_type (@chart_types)
-
-    # Write the subclass chart type elements for primary and secondary axes
-    $self->_write_chart_type( primary_axes => 1 );
-    $self->_write_chart_type( primary_axes => 0 );
-
-    # Write c:catAx and c:valAx elements for series using primary axes
-    $self->_write_date_axis(
-        x_axis   => $self->{_x_axis},
-        y_axis   => $self->{_y_axis},
-        axis_ids => $self->{_axis_ids}
-    );
-    $self->_write_val_axis(
-        x_axis   => $self->{_x_axis},
-        y_axis   => $self->{_y_axis},
-        axis_ids => $self->{_axis_ids}
-    );
-
-    # Write c:valAx and c:catAx elements for series using secondary axes
-    $self->_write_val_axis(
-        x_axis   => $self->{_x2_axis},
-        y_axis   => $self->{_y2_axis},
-        axis_ids => $self->{_axis2_ids}
-    );
-    $self->_write_date_axis(
-        x_axis   => $self->{_x2_axis},
-        y_axis   => $self->{_y2_axis},
-        axis_ids => $self->{_axis2_ids}
-    );
-
-    # Write the c:dTable element.
-    $self->_write_d_table();
-
-    # Write the c:spPr element for the plotarea formatting.
-    $self->_write_sp_pr( $self->{_plotarea} );
-
-    $self->xml_end_tag( 'c:plotArea' );
 }
 
 
@@ -343,7 +301,7 @@ Here is a complete example that demonstrates most of the available features when
 
 <p>This will produce a chart that looks like this:</p>
 
-<p><center><img src="http://jmcnamara.github.com/excel-writer-xlsx/images/examples/stock1.jpg" width="483" height="291" alt="Chart example." /></center></p>
+<p><center><img src="http://jmcnamara.github.io/excel-writer-xlsx/images/examples/stock1.jpg" width="483" height="291" alt="Chart example." /></center></p>
 
 =end html
 
@@ -354,7 +312,7 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-Copyright MM-MMXIII, John McNamara.
+Copyright MM-MMXV, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.
 

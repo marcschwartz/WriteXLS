@@ -8,7 +8,7 @@ package Excel::Writer::XLSX::Chart::Pie;
 #
 # See formatting note in Excel::Writer::XLSX::Chart.
 #
-# Copyright 2000-2013, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2015, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -22,7 +22,7 @@ use Carp;
 use Excel::Writer::XLSX::Chart;
 
 our @ISA     = qw(Excel::Writer::XLSX::Chart);
-our $VERSION = '0.70';
+our $VERSION = '0.84';
 
 
 ###############################################################################
@@ -36,9 +36,41 @@ sub new {
     my $self  = Excel::Writer::XLSX::Chart->new( @_ );
 
     $self->{_vary_data_color} = 1;
+    $self->{_rotation}        = 0;
+
+    # Set the available data label positions for this chart type.
+    $self->{_label_position_default} = 'best_fit';
+    $self->{_label_positions} = {
+        center      => 'ctr',
+        inside_end  => 'inEnd',
+        outside_end => 'outEnd',
+        best_fit    => 'bestFit',
+    };
 
     bless $self, $class;
     return $self;
+}
+
+
+###############################################################################
+#
+# set_rotation()
+#
+# Set the Pie/Doughnut chart rotation: the angle of the first slice.
+#
+sub set_rotation {
+
+    my $self     = shift;
+    my $rotation = shift;
+
+    return if !defined $rotation;
+
+    if ( $rotation >= 0 && $rotation <= 360 ) {
+        $self->{_rotation} = $rotation;
+    }
+    else {
+        carp "Chart rotation $rotation outside range: 0 <= rotation <= 360";
+    }
 }
 
 
@@ -83,12 +115,28 @@ sub _write_pie_chart {
 }
 
 
+###############################################################################
+#
+# combine()
+#
+# Override parent method to add a warning.
+#
+sub combine {
+
+    my $self  = shift;
+    my $chart = shift;
+
+    carp "Combined chart not currently supported for Pie charts";
+    return;
+}
+
+
 ##############################################################################
 #
 # _write_plot_area().
 #
 # Over-ridden method to remove the cat_axis() and val_axis() code since
-# Pie charts don't require those axes.
+# Pie/Doughnut charts don't require those axes.
 #
 # Write the <c:plotArea> element.
 #
@@ -99,7 +147,7 @@ sub _write_plot_area {
     $self->xml_start_tag( 'c:plotArea' );
 
     # Write the c:layout element.
-    $self->_write_layout();
+    $self->_write_layout( $self->{_plotarea}->{_layout}, 'plot' );
 
     # Write the subclass chart type element.
     $self->_write_chart_type();
@@ -118,9 +166,17 @@ sub _write_plot_area {
 #
 sub _write_legend {
 
-    my $self     = shift;
-    my $position = $self->{_legend_position};
-    my $overlay  = 0;
+    my $self          = shift;
+    my $position      = $self->{_legend_position};
+    my $font          = $self->{_legend_font};
+    my @delete_series = ();
+    my $overlay       = 0;
+
+    if ( defined $self->{_legend_delete_series}
+        && ref $self->{_legend_delete_series} eq 'ARRAY' )
+    {
+        @delete_series = @{ $self->{_legend_delete_series} };
+    }
 
     if ( $position =~ s/^overlay_// ) {
         $overlay = 1;
@@ -143,14 +199,21 @@ sub _write_legend {
     # Write the c:legendPos element.
     $self->_write_legend_pos( $position );
 
+    # Remove series labels from the legend.
+    for my $index ( @delete_series ) {
+
+        # Write the c:legendEntry element.
+        $self->_write_legend_entry( $index );
+    }
+
     # Write the c:layout element.
-    $self->_write_layout();
+    $self->_write_layout( $self->{_legend_layout}, 'legend' );
 
     # Write the c:overlay element.
     $self->_write_overlay() if $overlay;
 
     # Write the c:txPr element. Over-ridden.
-    $self->_write_tx_pr_legend();
+    $self->_write_tx_pr_legend( 0, $font );
 
     $self->xml_end_tag( 'c:legend' );
 }
@@ -164,19 +227,25 @@ sub _write_legend {
 #
 sub _write_tx_pr_legend {
 
-    my $self  = shift;
-    my $horiz = 0;
+    my $self     = shift;
+    my $horiz    = shift;
+    my $font     = shift;
+    my $rotation = undef;
+
+    if ( $font && exists $font->{_rotation} ) {
+        $rotation = $font->{_rotation};
+    }
 
     $self->xml_start_tag( 'c:txPr' );
 
     # Write the a:bodyPr element.
-    $self->_write_a_body_pr( $horiz );
+    $self->_write_a_body_pr( $rotation, $horiz );
 
     # Write the a:lstStyle element.
     $self->_write_a_lst_style();
 
     # Write the a:p element.
-    $self->_write_a_p_legend();
+    $self->_write_a_p_legend( $font );
 
     $self->xml_end_tag( 'c:txPr' );
 }
@@ -190,13 +259,13 @@ sub _write_tx_pr_legend {
 #
 sub _write_a_p_legend {
 
-    my $self  = shift;
-    my $title = shift;
+    my $self = shift;
+    my $font = shift;
 
     $self->xml_start_tag( 'a:p' );
 
     # Write the a:pPr element.
-    $self->_write_a_p_pr_legend();
+    $self->_write_a_p_pr_legend( $font );
 
     # Write the a:endParaRPr element.
     $self->_write_a_end_para_rpr();
@@ -214,6 +283,7 @@ sub _write_a_p_legend {
 sub _write_a_p_pr_legend {
 
     my $self = shift;
+    my $font = shift;
     my $rtl  = 0;
 
     my @attributes = ( 'rtl' => $rtl );
@@ -221,7 +291,7 @@ sub _write_a_p_pr_legend {
     $self->xml_start_tag( 'a:pPr', @attributes );
 
     # Write the a:defRPr element.
-    $self->_write_a_def_rpr();
+    $self->_write_a_def_rpr( $font );
 
     $self->xml_end_tag( 'a:pPr' );
 }
@@ -253,7 +323,7 @@ sub _write_vary_colors {
 sub _write_first_slice_ang {
 
     my $self = shift;
-    my $val  = 0;
+    my $val  = $self->{_rotation};
 
     my @attributes = ( 'val' => $val );
 
@@ -316,7 +386,18 @@ These methods are explained in detail in L<Excel::Writer::XLSX::Chart>. Class sp
 
 =head1 Pie Chart Methods
 
-It is possible to define chart colors for most types of Excel::Writer::XLSX charts via the add_series() method. However, Pie charts are a special case since each segment is represented as a point so it is necessary to assign formatting to each point in the series:
+=head2 set_rotation()
+
+The C<set_rotation()> method is used to set the rotation of the first segment of a Pie/Doughnut chart. This has the effect of rotating the entire chart:
+
+    $chart->set_rotation( 90 );
+
+The angle of rotation must be C<< 0 <= rotation <= 360 >>.
+
+
+=head2 User defined colors
+
+It is possible to define chart colors for most types of Excel::Writer::XLSX charts via the add_series() method. However, Pie/Doughnut charts are a special case since each segment is represented as a point so it is necessary to assign formatting to each point in the series:
 
     $chart->add_series(
         values => '=Sheet1!$A$1:$A$3',
@@ -344,6 +425,8 @@ Pie charts support leader lines:
     );
 
 Note: Even when leader lines are turned on they aren't automatically visible in Excel or Excel::Writer::XLSX. Due to an Excel limitation (or design) leader lines only appear if the data label is moved manually or if the data labels are very close and need to be adjusted automatically.
+
+=head2 Unsupported Methods
 
 A Pie chart doesn't have an X or Y axis so the following common chart methods are ignored.
 
@@ -401,7 +484,7 @@ Here is a complete example that demonstrates most of the available features when
 
 <p>This will produce a chart that looks like this:</p>
 
-<p><center><img src="http://jmcnamara.github.com/excel-writer-xlsx/images/examples/pie1.jpg" width="483" height="291" alt="Chart example." /></center></p>
+<p><center><img src="http://jmcnamara.github.io/excel-writer-xlsx/images/examples/pie1.jpg" width="483" height="291" alt="Chart example." /></center></p>
 
 =end html
 
@@ -412,6 +495,6 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-Copyright MM-MMXIII, John McNamara.
+Copyright MM-MMXV, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.

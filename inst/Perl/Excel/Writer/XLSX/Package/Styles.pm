@@ -6,7 +6,7 @@ package Excel::Writer::XLSX::Package::Styles;
 #
 # Used in conjunction with Excel::Writer::XLSX
 #
-# Copyright 2000-2013, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2015, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -20,7 +20,7 @@ use Carp;
 use Excel::Writer::XLSX::Package::XMLwriter;
 
 our @ISA     = qw(Excel::Writer::XLSX::Package::XMLwriter);
-our $VERSION = '0.70';
+our $VERSION = '0.84';
 
 
 ###############################################################################
@@ -348,7 +348,13 @@ sub _write_font {
         $self->xml_empty_tag( 'sz', 'val', $format->{_size} );
     }
 
-    if ( my $theme = $format->{_theme} ) {
+    my $theme = $format->{_theme};
+
+
+    if ( $theme == -1 ) {
+        # Ignore for excel2003_style.
+    }
+    elsif ( $theme ) {
         $self->_write_color( 'theme' => $theme );
     }
     elsif ( my $index = $format->{_color_indexed} ) {
@@ -365,7 +371,10 @@ sub _write_font {
 
     if ( !$dxf_format ) {
         $self->xml_empty_tag( 'name',   'val', $format->{_font} );
-        $self->xml_empty_tag( 'family', 'val', $format->{_font_family} );
+
+        if ($format->{_font_family}) {
+            $self->xml_empty_tag( 'family', 'val', $format->{_font_family} );
+        }
 
         if ( $format->{_font} eq 'Calibri' && !$format->{_hyperlink} ) {
             $self->xml_empty_tag(
@@ -1109,7 +1118,7 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-(c) MM-MMXIII, John McNamara.
+(c) MM-MMXV, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.
 

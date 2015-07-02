@@ -8,7 +8,7 @@ package Excel::Writer::XLSX::Chart::Scatter;
 #
 # See formatting note in Excel::Writer::XLSX::Chart.
 #
-# Copyright 2000-2013, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2015, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -22,7 +22,7 @@ use Carp;
 use Excel::Writer::XLSX::Chart;
 
 our @ISA     = qw(Excel::Writer::XLSX::Chart);
-our $VERSION = '0.70';
+our $VERSION = '0.84';
 
 
 ###############################################################################
@@ -35,14 +35,45 @@ sub new {
     my $class = shift;
     my $self  = Excel::Writer::XLSX::Chart->new( @_ );
 
-    $self->{_subtype}          = $self->{_subtype} || 'marker_only';
-    $self->{_cross_between}    = 'midCat';
-    $self->{_horiz_val_axis}   = 0;
-    $self->{_val_axis_postion} = 'b';
-    $self->{_smooth_allowed}   = 1;
+    $self->{_subtype}           = $self->{_subtype} || 'marker_only';
+    $self->{_cross_between}     = 'midCat';
+    $self->{_horiz_val_axis}    = 0;
+    $self->{_val_axis_postion}  = 'b';
+    $self->{_smooth_allowed}    = 1;
+    $self->{_requires_category} = 1;
+
+    # Set the available data label positions for this chart type.
+    $self->{_label_position_default} = 'right';
+    $self->{_label_positions} = {
+        center      => 'ctr',
+        right       => 'r',
+        left        => 'l',
+        above       => 't',
+        below       => 'b',
+        # For backward compatibility.
+        top         => 't',
+        bottom      => 'b',
+    };
 
     bless $self, $class;
     return $self;
+}
+
+
+###############################################################################
+#
+# combine()
+#
+# Override parent method to add a warning.
+#
+sub combine {
+
+    my $self  = shift;
+    my $chart = shift;
+
+    carp 'Combined chart not currently supported with scatter chart ' .
+      'as the primary chart';
+    return;
 }
 
 
@@ -191,19 +222,20 @@ sub _write_plot_area {
     $self->xml_start_tag( 'c:plotArea' );
 
     # Write the c:layout element.
-    $self->_write_layout();
+    $self->_write_layout( $self->{_plotarea}->{_layout}, 'plot' );
 
-    # Write the subclass chart type elements for primary and secondary axes
+    # Write the subclass chart type elements for primary and secondary axes.
     $self->_write_chart_type( primary_axes => 1 );
     $self->_write_chart_type( primary_axes => 0 );
 
-    # Write c:catAx and c:valAx elements for series using primary axes
+    # Write c:catAx and c:valAx elements for series using primary axes.
     $self->_write_cat_val_axis(
         x_axis   => $self->{_x_axis},
         y_axis   => $self->{_y_axis},
         axis_ids => $self->{_axis_ids},
         position => 'b',
     );
+
     my $tmp = $self->{_horiz_val_axis};
     $self->{_horiz_val_axis} = 1;
     $self->_write_val_axis(
@@ -214,7 +246,7 @@ sub _write_plot_area {
     );
     $self->{_horiz_val_axis} = $tmp;
 
-    # Write c:valAx and c:catAx elements for series using secondary axes
+    # Write c:valAx and c:catAx elements for series using secondary axes.
     $self->_write_cat_val_axis(
         x_axis   => $self->{_x2_axis},
         y_axis   => $self->{_y2_axis},
@@ -350,7 +382,7 @@ sub _modify_series_formatting {
         for my $series ( @{ $self->{_series} } ) {
 
             # Set a marker type unless there is already a user defined type.
-            if ( !$series->{_marker}->{_defined} ) {
+            if ( !$series->{_marker} ) {
                 $series->{_marker} = {
                     type     => 'none',
                     _defined => 1,
@@ -526,7 +558,7 @@ Here is a complete example that demonstrates most of the available features when
 
 <p>This will produce a chart that looks like this:</p>
 
-<p><center><img src="http://jmcnamara.github.com/excel-writer-xlsx/images/examples/scatter1.jpg" width="483" height="291" alt="Chart example." /></center></p>
+<p><center><img src="http://jmcnamara.github.io/excel-writer-xlsx/images/examples/scatter1.jpg" width="483" height="291" alt="Chart example." /></center></p>
 
 =end html
 
@@ -537,7 +569,7 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-Copyright MM-MMXIII, John McNamara.
+Copyright MM-MMXV, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.
 

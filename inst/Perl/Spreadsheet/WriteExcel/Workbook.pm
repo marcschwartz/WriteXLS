@@ -24,7 +24,7 @@ use Spreadsheet::WriteExcel::Properties ':property_sets';
 use vars qw($VERSION @ISA);
 @ISA = qw(Spreadsheet::WriteExcel::BIFFwriter Exporter);
 
-$VERSION = '2.39';
+$VERSION = '2.40';
 
 ###############################################################################
 #
@@ -469,7 +469,7 @@ sub add_worksheet {
 #
 # add_chart(%args)
 #
-# Create a chart for embedding or as as new sheet.
+# Create a chart for embedding or as a new sheet.
 #
 #
 sub add_chart {
@@ -1466,7 +1466,7 @@ sub _calc_mso_sizes {
 
 
         # Include 1 parent MSODRAWING shape, per sheet, in the shape count.
-        my $num_shapes   += 1 + $num_images
+        my $num_shapes    = 1 + $num_images
                               + $num_comments
                               + $num_charts
                               + $num_filters;
@@ -3634,6 +3634,6 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-© MM-MMX, John McNamara.
+Copyright MM-MMX, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.

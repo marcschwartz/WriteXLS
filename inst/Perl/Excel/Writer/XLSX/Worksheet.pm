@@ -7,7 +7,7 @@ package Excel::Writer::XLSX::Worksheet;
 #
 # Used in conjunction with Excel::Writer::XLSX
 #
-# Copyright 2000-2013, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2015, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -23,11 +23,14 @@ use List::Util qw(max min);
 use Excel::Writer::XLSX::Format;
 use Excel::Writer::XLSX::Drawing;
 use Excel::Writer::XLSX::Package::XMLwriter;
-use Excel::Writer::XLSX::Utility
-  qw(xl_cell_to_rowcol xl_rowcol_to_cell xl_col_to_name xl_range);
+use Excel::Writer::XLSX::Utility qw(xl_cell_to_rowcol
+                                    xl_rowcol_to_cell
+                                    xl_col_to_name
+                                    xl_range
+                                    quote_sheetname);
 
 our @ISA     = qw(Excel::Writer::XLSX::Package::XMLwriter);
-our $VERSION = '0.70';
+our $VERSION = '0.84';
 
 
 ###############################################################################
@@ -52,18 +55,18 @@ sub new {
     my $colmax = 16_384;
     my $strmax = 32767;
 
-    $self->{_name}         = $_[0];
-    $self->{_index}        = $_[1];
-    $self->{_activesheet}  = $_[2];
-    $self->{_firstsheet}   = $_[3];
-    $self->{_str_total}    = $_[4];
-    $self->{_str_unique}   = $_[5];
-    $self->{_str_table}    = $_[6];
-    $self->{_table_count}  = $_[7];
-    $self->{_1904}         = $_[8];
-    $self->{_palette}      = $_[9];
-    $self->{_optimization} = $_[10] || 0;
-    $self->{_tempdir}      = $_[11];
+    $self->{_name}            = $_[0];
+    $self->{_index}           = $_[1];
+    $self->{_activesheet}     = $_[2];
+    $self->{_firstsheet}      = $_[3];
+    $self->{_str_total}       = $_[4];
+    $self->{_str_unique}      = $_[5];
+    $self->{_str_table}       = $_[6];
+    $self->{_date_1904}       = $_[7];
+    $self->{_palette}         = $_[8];
+    $self->{_optimization}    = $_[9] || 0;
+    $self->{_tempdir}         = $_[10];
+    $self->{_excel2003_style} = $_[11];
 
     $self->{_ext_sheets}    = [];
     $self->{_fileclosed}    = 0;
@@ -77,7 +80,7 @@ sub new {
     $self->{_dim_colmin} = undef;
     $self->{_dim_colmax} = undef;
 
-    $self->{_colinfo}    = [];
+    $self->{_colinfo}    = {};
     $self->{_selections} = [];
     $self->{_hidden}     = 0;
     $self->{_active}     = 0;
@@ -101,6 +104,10 @@ sub new {
     $self->{_header_footer_changed} = 0;
     $self->{_header}                = '';
     $self->{_footer}                = '';
+    $self->{_header_footer_aligns}  = 1;
+    $self->{_header_footer_scales}  = 1;
+    $self->{_header_images}         = [];
+    $self->{_footer_images}         = [];
 
     $self->{_margin_left}   = 0.7;
     $self->{_margin_right}  = 0.7;
@@ -147,8 +154,11 @@ sub new {
     $self->{_outline_on}        = 1;
     $self->{_outline_changed}   = 0;
 
-    $self->{_default_row_height} = 15;
-    $self->{_default_row_zeroed} = 0;
+    $self->{_original_row_height} = 15;
+    $self->{_default_row_height}  = 15;
+    $self->{_default_row_pixels}  = 20;
+    $self->{_default_col_pixels}  = 64;
+    $self->{_default_row_zeroed}  = 0;
 
     $self->{_names} = {};
 
@@ -158,14 +168,16 @@ sub new {
     $self->{_table} = {};
     $self->{_merge} = [];
 
-    $self->{_has_vml}          = 0;
-    $self->{_has_comments}     = 0;
-    $self->{_comments}         = {};
-    $self->{_comments_array}   = [];
-    $self->{_comments_author}  = '';
-    $self->{_comments_visible} = 0;
-    $self->{_vml_shape_id}     = 1024;
-    $self->{_buttons_array}    = [];
+    $self->{_has_vml}             = 0;
+    $self->{_has_header_vml}      = 0;
+    $self->{_has_comments}        = 0;
+    $self->{_comments}            = {};
+    $self->{_comments_array}      = [];
+    $self->{_comments_author}     = '';
+    $self->{_comments_visible}    = 0;
+    $self->{_vml_shape_id}        = 1024;
+    $self->{_buttons_array}       = [];
+    $self->{_header_images_array} = [];
 
     $self->{_autofilter}   = '';
     $self->{_filter_on}    = 0;
@@ -188,6 +200,7 @@ sub new {
     $self->{_external_vml_links}     = [];
     $self->{_external_table_links}   = [];
     $self->{_drawing_links}          = [];
+    $self->{_vml_drawing_links}      = [];
     $self->{_charts}                 = [];
     $self->{_images}                 = [];
     $self->{_tables}                 = [];
@@ -196,6 +209,9 @@ sub new {
     $self->{_shape_hash}             = {};
     $self->{_has_shapes}             = 0;
     $self->{_drawing}                = 0;
+
+    $self->{_horizontal_dpi} = 0;
+    $self->{_vertical_dpi}   = 0;
 
     $self->{_rstring}      = '';
     $self->{_previous_row} = 0;
@@ -211,6 +227,19 @@ sub new {
     $self->{_validations}  = [];
     $self->{_cond_formats} = {};
     $self->{_dxf_priority} = 1;
+
+    if ( $self->{_excel2003_style} ) {
+        $self->{_original_row_height}  = 12.75;
+        $self->{_default_row_height}   = 12.75;
+        $self->{_default_row_pixels}   = 17;
+        $self->{_margin_left}          = 0.75;
+        $self->{_margin_right}         = 0.75;
+        $self->{_margin_top}           = 1;
+        $self->{_margin_bottom}        = 1;
+        $self->{_margin_header}        = 0.5;
+        $self->{_margin_footer}        = 0.5;
+        $self->{_header_footer_aligns} = 0;
+    }
 
     bless $self, $class;
     return $self;
@@ -274,7 +303,6 @@ sub _assemble_xml_file {
         $self->_write_optimized_sheet_data();
     }
 
-
     # Write the sheetProtection element.
     $self->_write_sheet_protection();
 
@@ -282,7 +310,9 @@ sub _assemble_xml_file {
     #$self->_write_sheet_calc_pr();
 
     # Write the worksheet phonetic properties.
-    #$self->_write_phonetic_pr();
+    if ($self->{_excel2003_style}) {
+        $self->_write_phonetic_pr();
+    }
 
     # Write the autoFilter element.
     $self->_write_auto_filter();
@@ -322,6 +352,9 @@ sub _assemble_xml_file {
 
     # Write the legacyDrawing element.
     $self->_write_legacy_drawing();
+
+    # Write the legacyDrawingHF element.
+    $self->_write_legacy_drawing_hf();
 
     # Write the tableParts element.
     $self->_write_table_parts();
@@ -585,16 +618,15 @@ sub set_column {
         $self->{_outline_col_level} = $data[5];
     }
 
-    # Store the column data.
-    push @{ $self->{_colinfo} }, [@data];
+    # Store the column data based on the first column. Padded for sorting.
+    $self->{_colinfo}->{ sprintf "%05d", $data[0] } = [@data];
 
     # Store the column change to allow optimisations.
     $self->{_col_size_changed} = 1;
 
     # Store the col sizes for use when calculating image vertices taking
     # hidden columns into account. Also store the column formats.
-    my $width = $data[4] ? 0 : $data[2];    # Set width to zero if col is hidden
-    $width ||= 0;                           # Ensure width isn't undef.
+    my $width = $data[4] ? 0 : $data[2];    # Set width to zero if hidden.
     my $format = $data[3];
 
     my ( $firstcol, $lastcol ) = @data;
@@ -810,16 +842,59 @@ sub set_paper {
 #
 sub set_header {
 
-    my $self = shift;
-    my $string = $_[0] || '';
+    my $self    = shift;
+    my $string  = $_[0] || '';
+    my $margin  = $_[1] || 0.3;
+    my $options = $_[2] || {};
+
+
+    # Replace the Excel placeholder &[Picture] with the internal &G.
+    $string =~ s/&\[Picture\]/&G/g;
 
     if ( length $string >= 255 ) {
         carp 'Header string must be less than 255 characters';
         return;
     }
 
+    if ( defined $options->{align_with_margins} ) {
+        $self->{_header_footer_aligns} = $options->{align_with_margins};
+    }
+
+    if ( defined $options->{scale_with_doc} ) {
+        $self->{_header_footer_scales} = $options->{scale_with_doc};
+    }
+
+    # Reset the array in case the function is called more than once.
+    $self->{_header_images} = [];
+
+    if ( $options->{image_left} ) {
+        push @{ $self->{_header_images} }, [ $options->{image_left}, 'LH' ];
+    }
+
+    if ( $options->{image_center} ) {
+        push @{ $self->{_header_images} }, [ $options->{image_center}, 'CH' ];
+    }
+
+    if ( $options->{image_right} ) {
+        push @{ $self->{_header_images} }, [ $options->{image_right}, 'RH' ];
+    }
+
+    my $placeholder_count = () = $string =~ /&G/g;
+    my $image_count = @{ $self->{_header_images} };
+
+    if ( $image_count != $placeholder_count ) {
+        warn "Number of header images ($image_count) doesn't match placeholder "
+          . "count ($placeholder_count) in string: $string\n";
+        $self->{_header_images} = [];
+        return;
+    }
+
+    if ( $image_count ) {
+        $self->{_has_header_vml} = 1;
+    }
+
     $self->{_header}                = $string;
-    $self->{_margin_header}         = $_[1] || 0.3;
+    $self->{_margin_header}         = $margin;
     $self->{_header_footer_changed} = 1;
 }
 
@@ -832,16 +907,59 @@ sub set_header {
 #
 sub set_footer {
 
-    my $self = shift;
-    my $string = $_[0] || '';
+    my $self    = shift;
+    my $string  = $_[0] || '';
+    my $margin  = $_[1] || 0.3;
+    my $options = $_[2] || {};
+
+
+    # Replace the Excel placeholder &[Picture] with the internal &G.
+    $string =~ s/&\[Picture\]/&G/g;
 
     if ( length $string >= 255 ) {
         carp 'Footer string must be less than 255 characters';
         return;
     }
 
+    if ( defined $options->{align_with_margins} ) {
+        $self->{_header_footer_aligns} = $options->{align_with_margins};
+    }
+
+    if ( defined $options->{scale_with_doc} ) {
+        $self->{_header_footer_scales} = $options->{scale_with_doc};
+    }
+
+    # Reset the array in case the function is called more than once.
+    $self->{_footer_images} = [];
+
+    if ( $options->{image_left} ) {
+        push @{ $self->{_footer_images} }, [ $options->{image_left}, 'LF' ];
+    }
+
+    if ( $options->{image_center} ) {
+        push @{ $self->{_footer_images} }, [ $options->{image_center}, 'CF' ];
+    }
+
+    if ( $options->{image_right} ) {
+        push @{ $self->{_footer_images} }, [ $options->{image_right}, 'RF' ];
+    }
+
+    my $placeholder_count = () = $string =~ /&G/g;
+    my $image_count = @{ $self->{_footer_images} };
+
+    if ( $image_count != $placeholder_count ) {
+        warn "Number of footer images ($image_count) doesn't match placeholder "
+          . "count ($placeholder_count) in string: $string\n";
+        $self->{_footer_images} = [];
+        return;
+    }
+
+    if ( $image_count ) {
+        $self->{_has_header_vml} = 1;
+    }
+
     $self->{_footer}                = $string;
-    $self->{_margin_footer}         = $_[1] || 0.3;
+    $self->{_margin_footer}         = $margin;
     $self->{_header_footer_changed} = 1;
 }
 
@@ -1025,7 +1143,7 @@ sub repeat_rows {
     my $area = '$' . $row_min . ':' . '$' . $row_max;
 
     # Build up the print titles "Sheet1!$1:$2"
-    my $sheetname = $self->_quote_sheetname( $self->{_name} );
+    my $sheetname = quote_sheetname( $self->{_name} );
     $area = $sheetname . "!" . $area;
 
     $self->{_repeat_rows} = $area;
@@ -1062,7 +1180,7 @@ sub repeat_columns {
     my $area = $col_min . ':' . $col_max;
 
     # Build up the print area range "=Sheet2!C1:C2"
-    my $sheetname = $self->_quote_sheetname( $self->{_name} );
+    my $sheetname = quote_sheetname( $self->{_name} );
     $area = $sheetname . "!" . $area;
 
     $self->{_repeat_cols} = $area;
@@ -1502,7 +1620,7 @@ sub _convert_name_area {
     }
 
     # Build up the print area range "Sheet1!$A$1:$C$13".
-    my $sheetname = $self->_quote_sheetname( $self->{_name} );
+    my $sheetname = quote_sheetname( $self->{_name} );
     $area = $sheetname . "!" . $area;
 
     return $area;
@@ -1656,6 +1774,20 @@ sub set_print_scale {
 
 ###############################################################################
 #
+# print_black_and_white()
+#
+# Set the option to print the worksheet in black and white.
+#
+sub print_black_and_white {
+
+    my $self = shift;
+
+    $self->{_black_white} = 1;
+}
+
+
+###############################################################################
+#
 # keep_leading_zeros()
 #
 # Causes the write() method to treat integers with a leading zero as a string.
@@ -1763,7 +1895,6 @@ sub set_start_page {
     return unless defined $_[0];
 
     $self->{_page_start}   = $_[0];
-    $self->{_custom_start} = 1;
 }
 
 
@@ -2022,7 +2153,7 @@ sub write_comment {
     # Check that row and col are valid and store max and min values
     return -2 if $self->_check_dimensions( $row, $col );
 
-    $self->{_has_vml}     = 1;
+    $self->{_has_vml}      = 1;
     $self->{_has_comments} = 1;
 
     # Process the properties of the cell comment.
@@ -2794,7 +2925,7 @@ sub convert_date_time {
     }
 
     # Set the epoch as 1900 or 1904. Defaults to 1900.
-    my $date_1904 = $self->{_1904};
+    my $date_1904 = $self->{_date_1904};
 
 
     # Special cases for Excel.
@@ -2897,6 +3028,10 @@ sub set_row {
     # Store the row change to allow optimisations.
     $self->{_row_size_changed} = 1;
 
+    if ($hidden) {
+        $height = 0;
+    }
+
     # Store the row sizes for use when calculating image vertices.
     $self->{_row_sizes}->{$row} = $height;
 }
@@ -2911,10 +3046,10 @@ sub set_row {
 sub set_default_row {
 
     my $self        = shift;
-    my $height      = shift || 15;
+    my $height      = shift || $self->{_original_row_height};
     my $zero_height = shift || 0;
 
-    if ( $height != 15 ) {
+    if ( $height != $self->{_original_row_height} ) {
         $self->{_default_row_height} = $height;
 
         # Store the row change to allow optimisations.
@@ -3311,6 +3446,47 @@ sub data_validation {
         }
     }
 
+    # Check that the input title doesn't exceed the maximum length.
+    if ( $param->{input_title} and length $param->{input_title} > 32 ) {
+        carp "Length of input title '$param->{input_title}'"
+          . " exceeds Excel's limit of 32";
+        return -3;
+    }
+
+    # Check that the error title don't exceed the maximum length.
+    if ( $param->{error_title} and length $param->{error_title} > 32 ) {
+        carp "Length of error title '$param->{error_title}'"
+          . " exceeds Excel's limit of 32";
+        return -3;
+    }
+
+    # Check that the input message don't exceed the maximum length.
+    if ( $param->{input_message} and length $param->{input_message} > 255 ) {
+        carp "Length of input message '$param->{input_message}'"
+          . " exceeds Excel's limit of 255";
+        return -3;
+    }
+
+    # Check that the error message don't exceed the maximum length.
+    if ( $param->{error_message} and length $param->{error_message} > 255 ) {
+        carp "Length of error message '$param->{error_message}'"
+          . " exceeds Excel's limit of 255";
+        return -3;
+    }
+
+    # Check that the input list don't exceed the maximum length.
+    if ( $param->{validate} eq 'list' ) {
+
+        if ( ref $param->{value} eq 'ARRAY' ) {
+
+            my $formula = join ',', @{ $param->{value} };
+            if ( length $formula > 255 ) {
+                carp "Length of list items '$formula' exceeds Excel's "
+                  . "limit of 255, use a formula range instead";
+                return -3;
+            }
+        }
+    }
 
     # Set some defaults if they haven't been defined by the user.
     $param->{ignore_blank} = 1 if !defined $param->{ignore_blank};
@@ -3372,7 +3548,7 @@ sub conditional_formatting {
     if ( @_ != 5 && @_ != 3 ) { return -1 }
 
     # The final hashref contains the validation parameters.
-    my $param = pop;
+    my $options = pop;
 
     # Make the last row/col the same as the first if not defined.
     my ( $row1, $col1, $row2, $col2 ) = @_;
@@ -3387,11 +3563,14 @@ sub conditional_formatting {
 
 
     # Check that the last parameter is a hash list.
-    if ( ref $param ne 'HASH' ) {
-        carp "Last parameter '$param' in conditional_formatting() "
+    if ( ref $options ne 'HASH' ) {
+        carp "Last parameter in conditional_formatting() "
           . "must be a hash ref";
         return -3;
     }
+
+    # Copy the user params.
+    my $param = {%$options};
 
     # List of valid input parameters.
     my %valid_parameter = (
@@ -3830,10 +4009,6 @@ sub add_table {
         }
     }
 
-    # Table count is a member of Workbook, global to all Worksheet.
-    ${ $self->{_table_count} }++;
-    $table{_id} = ${ $self->{_table_count} };
-
     # Turn on Excel's defaults.
     $param->{banded_rows} = 1 if !defined $param->{banded_rows};
     $param->{header_row}  = 1 if !defined $param->{header_row};
@@ -3852,12 +4027,6 @@ sub add_table {
     if ( defined $param->{name} ) {
         $table{_name} = $param->{name};
     }
-    else {
-
-        # Set a default name.
-        $table{_name} = 'Table' . $table{_id};
-    }
-
 
     # Set the table style.
     if ( defined $param->{style} ) {
@@ -3965,8 +4134,10 @@ sub add_table {
 
                     );
 
+                    my $value = $user_data->{total_value} || 0;
+
                     $self->write_formula( $row2, $col_num, $formula,
-                        $user_data->{format} );
+                        $user_data->{format}, $value );
 
                 }
                 elsif ( $user_data->{total_string} ) {
@@ -4028,10 +4199,6 @@ sub add_table {
 
     # Store the table data.
     push @{ $self->{_tables} }, \%table;
-
-    # Store the link used for the rels file.
-    push @{ $self->{_external_table_links} },
-      [ '/table', '../tables/table' . $table{_id} . '.xml' ];
 
     return \%table;
 }
@@ -4144,7 +4311,7 @@ sub add_sparkline {
 
 
     # Get the worksheet name for the range conversion below.
-    my $sheetname = $self->_quote_sheetname( $self->{_name} );
+    my $sheetname = quote_sheetname( $self->{_name} );
 
     # Cleanup the input ranges.
     for my $range ( @{ $sparkline->{_ranges} } ) {
@@ -4256,6 +4423,26 @@ sub insert_button {
 
 ###############################################################################
 #
+# set_vba_name()
+#
+# Set the VBA name for the worksheet.
+#
+sub set_vba_name {
+
+    my $self         = shift;
+    my $vba_codemame = shift;
+
+    if ( $vba_codemame ) {
+        $self->{_vba_codename} = $vba_codemame;
+    }
+    else {
+        $self->{_vba_codename} = $self->{_name};
+    }
+}
+
+
+###############################################################################
+#
 # Internal methods.
 #
 ###############################################################################
@@ -4342,28 +4529,6 @@ sub _get_palette_color {
     my @rgb = @{ $palette->[$index] };
 
     return sprintf "FF%02X%02X%02X", @rgb;
-}
-
-
-###############################################################################
-#
-# _quote_sheetname()
-#
-# Sheetnames used in references should be quoted if they contain any spaces,
-# special characters or if the look like something that isn't a sheet name.
-# TODO. We need to handle more special cases.
-#
-sub _quote_sheetname {
-
-    my $self      = shift;
-    my $sheetname = $_[0];
-
-    if ( $sheetname =~ /^Sheet\d+$/ ) {
-        return $sheetname;
-    }
-    else {
-        return qq('$sheetname');
-    }
 }
 
 
@@ -4573,7 +4738,7 @@ sub _check_dimensions {
 #   |  1  |(A1)._______|______      |
 #   |     |    |              |     |
 #   |     |    |              |     |
-#   +-----+----|    BITMAP    |-----+
+#   +-----+----|    Object    |-----+
 #   |     |    |              |     |
 #   |  2  |    |______________.     |
 #   |     |            |        (B2)|
@@ -4625,13 +4790,13 @@ sub _position_object_pixels {
 
     # Calculate the absolute x offset of the top-left vertex.
     if ( $self->{_col_size_changed} ) {
-        for my $col_id ( 1 .. $col_start ) {
+        for my $col_id ( 0 .. $col_start -1 ) {
             $x_abs += $self->_size_col( $col_id );
         }
     }
     else {
         # Optimisation for when the column widths haven't changed.
-        $x_abs += 64 * $col_start;
+        $x_abs += $self->{_default_col_pixels} * $col_start;
     }
 
     $x_abs += $x1;
@@ -4639,13 +4804,13 @@ sub _position_object_pixels {
     # Calculate the absolute y offset of the top-left vertex.
     # Store the column change to allow optimisations.
     if ( $self->{_row_size_changed} ) {
-        for my $row_id ( 1 .. $row_start ) {
+        for my $row_id ( 0 .. $row_start -1 ) {
             $y_abs += $self->_size_row( $row_id );
         }
     }
     else {
         # Optimisation for when the row heights haven't changed.
-        $y_abs += 20 * $row_start;
+        $y_abs += $self->{_default_row_pixels} * $row_start;
     }
 
     $y_abs += $y1;
@@ -4802,7 +4967,9 @@ sub _size_col {
     my $pixels;
 
     # Look up the cell value to see if it has been changed.
-    if ( exists $self->{_col_sizes}->{$col} ) {
+    if ( exists $self->{_col_sizes}->{$col}
+        and defined $self->{_col_sizes}->{$col} )
+    {
         my $width = $self->{_col_sizes}->{$col};
 
         # Convert to pixels.
@@ -4810,14 +4977,14 @@ sub _size_col {
             $pixels = 0;
         }
         elsif ( $width < 1 ) {
-            $pixels = int( $width * ($max_digit_width + $padding) + 0.5 );
+            $pixels = int( $width * ( $max_digit_width + $padding ) + 0.5 );
         }
         else {
             $pixels = int( $width * $max_digit_width + 0.5 ) + $padding;
         }
     }
     else {
-        $pixels = 64;
+        $pixels = $self->{_default_col_pixels};
     }
 
     return $pixels;
@@ -4854,76 +5021,6 @@ sub _size_row {
     }
 
     return $pixels;
-}
-
-
-###############################################################################
-#
-# _options_changed()
-#
-# Check to see if any of the worksheet options have changed.
-#
-sub _options_changed {
-
-    my $self = shift;
-
-    my $options_changed = 0;
-    my $print_changed   = 0;
-    my $setup_changed   = 0;
-
-
-    if (   $self->{_orientation} == 0
-        or $self->{_hcenter} == 1
-        or $self->{_vcenter} == 1
-        or $self->{_header} ne ''
-        or $self->{_footer} ne ''
-        or $self->{_margin_header} != 0.50
-        or $self->{_margin_footer} != 0.50
-        or $self->{_margin_left} != 0.75
-        or $self->{_margin_right} != 0.75
-        or $self->{_margin_top} != 1.00
-        or $self->{_margin_bottom} != 1.00 )
-    {
-        $setup_changed = 1;
-    }
-
-
-    # Special case for 1x1 page fit.
-    if ( $self->{_fit_width} == 1 and $self->{_fit_height} == 1 ) {
-        $options_changed     = 1;
-        $self->{_fit_width}  = 0;
-        $self->{_fit_height} = 0;
-    }
-
-
-    if (   $self->{_fit_width} > 1
-        or $self->{_fit_height} > 1
-        or $self->{_page_order} == 1
-        or $self->{_black_white} == 1
-        or $self->{_draft_quality} == 1
-        or $self->{_print_comments} == 1
-        or $self->{_paper_size} != 0
-        or $self->{_print_scale} != 100
-        or $self->{_print_gridlines} == 1
-        or $self->{_print_headers} == 1
-        or @{ $self->{_hbreaks} } > 0
-        or @{ $self->{_vbreaks} } > 0 )
-    {
-        $print_changed = 1;
-    }
-
-
-    if (   $print_changed
-        or $setup_changed )
-    {
-        $options_changed = 1;
-    }
-
-
-    $options_changed = 1 if $self->{_screen_gridlines} == 0;
-    $options_changed = 1 if $self->{_filter_on};
-
-    return ( $options_changed, $print_changed, $setup_changed );
 }
 
 
@@ -4990,11 +5087,26 @@ sub insert_chart {
 
     }
 
+    # Ensure a chart isn't inserted more than once.
+    if (   $chart->{_already_inserted}
+        || $chart->{_combined} && $chart->{_combined}->{_already_inserted} )
+    {
+        carp "Chart cannot be inserted in a worksheet more than once";
+        return;
+    }
+    else {
+        $chart->{_already_inserted} = 1;
+
+        if ( $chart->{_combined} ) {
+            $chart->{_combined}->{_already_inserted} = 1;
+        }
+    }
+
     # Use the values set with $chart->set_size(), if any.
     $x_scale  = $chart->{_x_scale}  if $chart->{_x_scale} != 1;
     $y_scale  = $chart->{_y_scale}  if $chart->{_y_scale} != 1;
     $x_offset = $chart->{_x_offset} if $chart->{_x_offset};
-    $x_offset = $chart->{_y_offset} if $chart->{_y_offset};
+    $y_offset = $chart->{_y_offset} if $chart->{_y_offset};
 
     push @{ $self->{_charts} },
       [ $row, $col, $chart, $x_offset, $y_offset, $x_scale, $y_scale ];
@@ -5029,7 +5141,7 @@ sub _prepare_chart {
 
     my @dimensions =
       $self->_position_object_emus( $col, $row, $x_offset, $y_offset, $width,
-        $height );
+        $height);
 
     # Set the chart name for the embedded object if it has been specified.
     my $name = $chart->{_chart_name};
@@ -5186,6 +5298,8 @@ sub _prepare_image {
     my $height       = shift;
     my $name         = shift;
     my $image_type   = shift;
+    my $x_dpi        = shift;
+    my $y_dpi        = shift;
     my $drawing_type = 2;
     my $drawing;
 
@@ -5195,9 +5309,12 @@ sub _prepare_image {
     $width  *= $x_scale;
     $height *= $y_scale;
 
+    $width  *= 96 / $x_dpi;
+    $height *= 96 / $y_dpi;
+
     my @dimensions =
       $self->_position_object_emus( $col, $row, $x_offset, $y_offset, $width,
-        $height );
+        $height);
 
     # Convert from pixels to emus.
     $width  = int( 0.5 + ( $width * 9_525 ) );
@@ -5223,6 +5340,35 @@ sub _prepare_image {
 
 
     push @{ $self->{_drawing_links} },
+      [ '/image', '../media/image' . $image_id . '.' . $image_type ];
+}
+
+
+###############################################################################
+#
+# _prepare_header_image()
+#
+# Set up an image without a drawing object for header/footer images.
+#
+sub _prepare_header_image {
+
+    my $self       = shift;
+    my $image_id   = shift;
+    my $width      = shift;
+    my $height     = shift;
+    my $name       = shift;
+    my $image_type = shift;
+    my $position   = shift;
+    my $x_dpi      = shift;
+    my $y_dpi      = shift;
+
+    # Strip the extension from the filename.
+    $name =~ s/\.[^\.]+$//;
+
+    push @{ $self->{_header_images_array} },
+      [ $width, $height, $name, $position, $x_dpi, $y_dpi ];
+
+    push @{ $self->{_vml_drawing_links} },
       [ '/image', '../media/image' . $image_id . '.' . $image_type ];
 }
 
@@ -5552,10 +5698,8 @@ sub _prepare_vml_objects {
         }
     }
 
-
     push @{ $self->{_external_vml_links} },
       [ '/vmlDrawing', '../drawings/vmlDrawing' . $vml_drawing_id . '.vml' ];
-
 
     if ( $self->{_has_comments} ) {
 
@@ -5578,6 +5722,57 @@ sub _prepare_vml_objects {
     $self->{_vml_shape_id} = $vml_shape_id;
 
     return $count;
+}
+
+
+###############################################################################
+#
+# _prepare_header_vml_objects()
+#
+# Set up external linkage for VML header/footer images.
+#
+sub _prepare_header_vml_objects {
+
+    my $self           = shift;
+    my $vml_header_id  = shift;
+    my $vml_drawing_id = shift;
+
+    $self->{_vml_header_id} = $vml_header_id;
+
+    push @{ $self->{_external_vml_links} },
+      [ '/vmlDrawing', '../drawings/vmlDrawing' . $vml_drawing_id . '.vml' ];
+}
+
+
+###############################################################################
+#
+# _prepare_tables()
+#
+# Set the table ids for the worksheet tables.
+#
+sub _prepare_tables {
+
+    my $self     = shift;
+    my $table_id = shift;
+
+
+    for my $table ( @{ $self->{_tables} } ) {
+
+        $table-> {_id} = $table_id;
+
+        # Set the table name unless defined by the user.
+        if ( !defined $table->{_name} ) {
+
+            # Set a default name.
+            $table->{_name} = 'Table' . $table_id;
+        }
+
+        # Store the link used for the rels file.
+        my $link = [ '/table', '../tables/table' . $table_id . '.xml' ];
+
+        push @{ $self->{_external_table_links} }, $link;
+        $table_id++;
+    }
 }
 
 
@@ -5750,7 +5945,7 @@ sub _comment_params {
 #
 sub _button_params {
 
-    my $self = shift;
+    my $self   = shift;
     my $row    = shift;
     my $col    = shift;
     my $params = shift;
@@ -5779,8 +5974,8 @@ sub _button_params {
 
 
     # Ensure that a width and height have been set.
-    my $default_width  = 64;
-    my $default_height = 20;
+    my $default_width  = $self->{_default_col_pixels};
+    my $default_height = $self->{_default_row_pixels};
     $params->{width}  = $default_width  if !$params->{width};
     $params->{height} = $default_height if !$params->{height};
 
@@ -6247,7 +6442,7 @@ sub _write_sheet_format_pr {
 
     my @attributes = ( 'defaultRowHeight' => $default_row_height );
 
-    if ( $self->{_default_row_height} != 15 ) {
+    if ( $self->{_default_row_height} != $self->{_original_row_height} ) {
         push @attributes, ( 'customHeight' => 1 );
     }
 
@@ -6277,12 +6472,12 @@ sub _write_cols {
     my $self = shift;
 
     # Exit unless some column have been formatted.
-    return unless @{ $self->{_colinfo} };
+    return unless %{ $self->{_colinfo} };
 
     $self->xml_start_tag( 'cols' );
 
-    for my $col_info ( @{ $self->{_colinfo} } ) {
-        $self->_write_col_info( @$col_info );
+    for my $col ( sort keys %{ $self->{_colinfo} } ) {
+        $self->_write_col_info( @{ $self->{_colinfo}->{$col} } );
     }
 
     $self->xml_end_tag( 'cols' );
@@ -6655,9 +6850,17 @@ sub _write_row {
     push @attributes, ( 'spans'        => $spans )    if defined $spans;
     push @attributes, ( 's'            => $xf_index ) if $xf_index;
     push @attributes, ( 'customFormat' => 1 )         if $format;
-    push @attributes, ( 'ht'           => $height )   if $height != 15;
+
+    if ( $height != $self->{_original_row_height} ) {
+        push @attributes, ( 'ht' => $height );
+    }
+
     push @attributes, ( 'hidden'       => 1 )         if $hidden;
-    push @attributes, ( 'customHeight' => 1 )         if $height != 15;
+
+    if ( $height != $self->{_original_row_height} ) {
+        push @attributes, ( 'customHeight' => 1 );
+    }
+
     push @attributes, ( 'outlineLevel' => $level )    if $level;
     push @attributes, ( 'collapsed'    => 1 )         if $collapsed;
 
@@ -6720,6 +6923,18 @@ sub _write_cell {
     my $token    = $cell->[1];
     my $xf       = $cell->[2];
     my $xf_index = 0;
+
+    my %error_codes = (
+        '#DIV/0!' => 1,
+        '#N/A'    => 1,
+        '#NAME?'  => 1,
+        '#NULL!'  => 1,
+        '#NUM!'   => 1,
+        '#REF!'   => 1,
+        '#VALUE!' => 1,
+    );
+
+    my %boolean = ( 'TRUE' => 1, 'FALSE' => 0 );
 
     # Get the format index.
     if ( ref( $xf ) ) {
@@ -6789,11 +7004,19 @@ sub _write_cell {
         if (   $value
             && $value !~ /^([+-]?)(?=\d|\.\d)\d*(\.\d*)?([Ee]([+-]?\d+))?$/ )
         {
-            push @attributes, ( 't' => 'str' );
-            $value =
-              Excel::Writer::XLSX::Package::XMLwriter::_escape_data( $value );
+            if ( exists $boolean{$value} ) {
+                push @attributes, ( 't' => 'b' );
+                $value = $boolean{$value};
+            }
+            elsif ( exists $error_codes{$value} ) {
+                push @attributes, ( 't' => 'e' );
+            }
+            else {
+                push @attributes, ( 't' => 'str' );
+                $value = Excel::Writer::XLSX::Package::XMLwriter::_escape_data(
+                    $value );
+            }
         }
-
 
         $self->xml_formula_element( $token, $value, @attributes );
 
@@ -6888,7 +7111,7 @@ sub _write_sheet_calc_pr {
 sub _write_phonetic_pr {
 
     my $self    = shift;
-    my $font_id = 1;
+    my $font_id = 0;
     my $type    = 'noConversion';
 
     my @attributes = (
@@ -6976,6 +7199,11 @@ sub _write_page_setup {
         push @attributes, ( 'pageOrder' => "overThenDown" );
     }
 
+    # Set start page.
+    if ( $self->{_page_start} > 1 ) {
+        push @attributes, ( 'firstPageNumber' => $self->{_page_start} );
+    }
+
     # Set page orientation.
     if ( $self->{_orientation} == 0 ) {
         push @attributes, ( 'orientation' => 'landscape' );
@@ -6984,10 +7212,25 @@ sub _write_page_setup {
         push @attributes, ( 'orientation' => 'portrait' );
     }
 
+    # Set print in black and white option.
+    if ( $self->{_black_white} ) {
+        push @attributes, ( 'blackAndWhite' => 1 );
+    }
+
     # Set start page.
     if ( $self->{_page_start} != 0 ) {
-        push @attributes, ( 'useFirstPageNumber' => $self->{_page_start} );
+        push @attributes, ( 'useFirstPageNumber' => 1 );
     }
+
+    # Set the DPI. Mainly only for testing.
+    if ( $self->{_horizontal_dpi} ) {
+        push @attributes, ( 'horizontalDpi' => $self->{_horizontal_dpi} );
+    }
+
+    if ( $self->{_vertical_dpi} ) {
+        push @attributes, ( 'verticalDpi' => $self->{_vertical_dpi} );
+    }
+
 
     $self->xml_empty_tag( 'pageSetup', @attributes );
 }
@@ -7091,14 +7334,26 @@ sub _write_print_options {
 #
 sub _write_header_footer {
 
-    my $self = shift;
+    my $self       = shift;
+    my @attributes = ();
 
-    return unless $self->{_header_footer_changed};
+    if ( !$self->{_header_footer_scales} ) {
+        push @attributes, ( 'scaleWithDoc' => 0 );
+    }
 
-    $self->xml_start_tag( 'headerFooter' );
-    $self->_write_odd_header() if $self->{_header};
-    $self->_write_odd_footer() if $self->{_footer};
-    $self->xml_end_tag( 'headerFooter' );
+    if ( !$self->{_header_footer_aligns} ) {
+        push @attributes, ( 'alignWithMargins' => 0 );
+    }
+
+    if ( $self->{_header_footer_changed} ) {
+        $self->xml_start_tag( 'headerFooter', @attributes );
+        $self->_write_odd_header() if $self->{_header};
+        $self->_write_odd_footer() if $self->{_footer};
+        $self->xml_end_tag( 'headerFooter' );
+    }
+    elsif ( $self->{_excel2003_style} ) {
+        $self->xml_empty_tag( 'headerFooter', @attributes );
+    }
 }
 
 
@@ -7942,6 +8197,29 @@ sub _write_legacy_drawing {
     my @attributes = ( 'r:id' => 'rId' . $id );
 
     $self->xml_empty_tag( 'legacyDrawing', @attributes );
+}
+
+
+
+##############################################################################
+#
+# _write_legacy_drawing_hf()
+#
+# Write the <legacyDrawingHF> element.
+#
+sub _write_legacy_drawing_hf {
+
+    my $self = shift;
+    my $id;
+
+    return unless $self->{_has_header_vml};
+
+    # Increment the relationship id for any drawings or comments.
+    $id = ++$self->{_rel_count};
+
+    my @attributes = ( 'r:id' => 'rId' . $id );
+
+    $self->xml_empty_tag( 'legacyDrawingHF', @attributes );
 }
 
 
@@ -8931,6 +9209,6 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-(c) MM-MMXIII, John McNamara.
+(c) MM-MMXV, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.

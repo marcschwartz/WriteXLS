@@ -4,7 +4,7 @@ package Excel::Writer::XLSX;
 #
 # Excel::Writer::XLSX - Create a new file in the Excel 2007+ XLSX format.
 #
-# Copyright 2000-2013, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2015, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -18,7 +18,7 @@ use strict;
 use Excel::Writer::XLSX::Workbook;
 
 our @ISA     = qw(Excel::Writer::XLSX::Workbook Exporter);
-our $VERSION = '0.70';
+our $VERSION = '0.84';
 
 
 ###############################################################################
@@ -50,7 +50,7 @@ Excel::Writer::XLSX - Create a new file in the Excel 2007+ XLSX format.
 
 =head1 VERSION
 
-This document refers to version 0.70 of Excel::Writer::XLSX, released June 30, 2013.
+This document refers to version 0.84 of Excel::Writer::XLSX, released April 21, 2015.
 
 
 
@@ -144,6 +144,7 @@ The Excel::Writer::XLSX module provides an object oriented interface to a new Ex
     add_chart()
     add_shape()
     add_vba_project()
+    set_vba_name()
     close()
     set_properties()
     define_name()
@@ -152,6 +153,7 @@ The Excel::Writer::XLSX module provides an object oriented interface to a new Ex
     sheets()
     set_1904()
     set_optimization()
+    set_calc_mode()
 
 If you are unfamiliar with object oriented interfaces or the way that they are implemented in Perl have a look at C<perlobj> and C<perltoot> in the main Perl documentation.
 
@@ -300,6 +302,7 @@ The available types are:
     column
     line
     pie
+    doughnut
     scatter
     stock
 
@@ -378,9 +381,13 @@ Macros can be tied to buttons using the worksheet C<insert_button()> method (see
 
 Note, Excel uses the file extension C<xlsm> instead of C<xlsx> for files that contain macros. It is advisable to follow the same convention.
 
-See also the C<macros.pl> example file.
+See also the C<macros.pl> example file and the L<WORKING WITH VBA MACROS>.
 
 
+
+=head2 set_vba_name()
+
+The C<set_vba_name()> method can be used to set the VBA codename for the workbook. This is sometimes required when a C<vbaProject macro> included via C<add_vba_project()> refers to the workbook. The default Excel VBA name of C<ThisWorkbook> is used if a user defined name isn't specified. See also L<WORKING WITH VBA MACROS>.
 
 
 =head2 close()
@@ -465,6 +472,8 @@ If the sheet name contains spaces or special characters you must enclose it in s
     $workbook->define_name( "'New Data'!Sales",  '=Sheet2!$G$1:$G$10' );
 
 See the defined_name.pl program in the examples dir of the distro.
+
+Refer to the following to see Excel's syntax rules for defined names: L<http://office.microsoft.com/en-001/excel-help/define-and-use-names-in-formulas-HA010147120.aspx#BMsyntax_rules_for_names>
 
 
 
@@ -598,6 +607,29 @@ Note, that with this optimization turned on a row of data is written and then di
 This method must be called before any calls to C<add_worksheet()>.
 
 
+
+=head2 set_calc_mode( $mode )
+
+Set the calculation mode for formulas in the workbook. This is mainly of use for workbooks with slow formulas where you want to allow the user to calculate them manually.
+
+The mode parameter can be one of the following strings:
+
+=over
+
+=item C<auto>
+
+The default. Excel will re-calculate formulas when a formula or a value affecting the formula changes.
+
+=item C<manual>
+
+Only re-calculate formulas when the user requires it. Generally by pressing F9.
+
+=item C<auto_except_tables>
+
+Excel will automatically re-calculate formulas except for tables.
+
+=back
+
 =head1 WORKSHEET METHODS
 
 A new worksheet is created by calling the C<add_worksheet()> method from a workbook object:
@@ -653,7 +685,7 @@ The following methods are available through a new worksheet:
     autofilter()
     filter_column()
     filter_column_list()
-
+    set_vba_name()
 
 
 
@@ -907,7 +939,7 @@ See the C<rich_strings.pl> example in the distro for more examples.
 
 =begin html
 
-<p><center><img src="http://jmcnamara.github.com/excel-writer-xlsx/images/examples/rich_strings.jpg" width="640" height="420" alt="Output from rich_strings.pl" /></center></p>
+<p><center><img src="http://jmcnamara.github.io/excel-writer-xlsx/images/examples/rich_strings.jpg" width="640" height="420" alt="Output from rich_strings.pl" /></center></p>
 
 =end html
 
@@ -1562,8 +1594,6 @@ See the C<write_handler 1-4> programs in the C<examples> directory for further e
 
 
 =head2 insert_image( $row, $col, $filename, $x, $y, $x_scale, $y_scale )
-
-Partially supported. Currently only works for 96 dpi images.
 
 This method can be used to insert a image into a worksheet. The image can be in PNG, JPEG or BMP format. The C<$x>, C<$y>, C<$x_scale> and C<$y_scale> parameters are optional.
 
@@ -2371,6 +2401,12 @@ It is exposed as a public method for utility purposes.
 
 The C<$date_string> format is detailed in the C<write_date_time()> method.
 
+=head2 Worksheet set_vba_name()
+
+The Worksheet C<set_vba_name()> method can be used to set the VBA codename for the
+worksheet (there is a similar method for the workbook VBA name). This is sometimes required when a C<vbaProject> macro included via C<add_vba_project()> refers to the worksheet. The default Excel VBA name of C<Sheet1>, etc., is used if a user defined name isn't specified.
+
+See also L<WORKING WITH VBA MACROS>.
 
 
 
@@ -2398,9 +2434,9 @@ The following methods are available for page set-up:
     fit_to_pages()
     set_start_page()
     set_print_scale()
+    print_black_and_white()
     set_h_pagebreaks()
     set_v_pagebreaks()
-
 
 A common requirement when working with Excel::Writer::XLSX is to apply the same page set-up features to all of the worksheets in a workbook. To do this you can use the C<sheets()> method of the C<workbook> class to access the array of worksheets in a workbook:
 
@@ -2558,6 +2594,9 @@ The available control character are:
     &X                                      Superscript
     &Y                                      Subscript
 
+    &[Picture]          Images              Image placeholder
+    &G                                      Same as &[Picture]
+
     &&                  Miscellaneous       Literal ampersand &
 
 
@@ -2627,6 +2666,11 @@ The information control characters act as variables that Excel will update as th
     |                                                               |
 
 
+Images can be inserted using the options shown below. Each image must have a placeholder in header string using the C<&[Picture]> or C<&G> control characters:
+
+    $worksheet->set_header( '&L&G', 0.3, { image_left => 'logo.jpg' });
+
+
 
 You can specify the font size of a section of the text by prefixing it with the control character C<&n> where C<n> is the font size:
 
@@ -2655,6 +2699,36 @@ As stated above the margin parameter is optional. As with the other margins the 
     $worksheet->set_header( '&CHello', 0.75 );
 
 The header and footer margins are independent of the top and bottom margins.
+
+The available optons are:
+
+=over
+
+=item * C<image_left> The path to the image. Requires a C<&G> or C<&[Picture]> placeholder.
+
+=item * C<image_center> Same as above.
+
+=item * C<image_right> Same as above.
+
+=item * C<scale_with_doc> Scale header with document. Defaults to true.
+
+=item * C<align_with_margins> Align header to margins. Defaults to true.
+
+=back
+
+The image options must have an accompanying C<&[Picture]> or C<&G> control
+character in the header string:
+
+    $worksheet->set_header(
+        '&L&[Picture]&C&[Picture]&R&[Picture]',
+        undef, # If you don't want to change the margin.
+        {
+            image_left   => 'red.jpg',
+            image_center => 'blue.jpg',
+            image_right  => 'yellow.jpg'
+        }
+      );
+
 
 Note, the header or footer string must be less than 255 characters. Strings longer than this will not be written and a warning will be generated.
 
@@ -2819,6 +2893,15 @@ Note also that although it is valid to use both C<fit_to_pages()> and C<set_prin
 
 
 
+=head2 print_black_and_white()
+
+Set the option to print the worksheet in black and white:
+
+    $worksheet->print_black_and_white();
+
+
+
+
 =head2 set_h_pagebreaks( @breaks )
 
 Add horizontal page breaks to a worksheet. A page break causes all the data that follows it to be printed on the next page. Horizontal page breaks act between rows. To create a page break between rows 20 and 21 you must specify the break at row 21. However in zero index notation this is actually row 20. So you can pretend for a small while that you are using 1 index notation:
@@ -2928,6 +3011,9 @@ The following table shows the Excel format categories, the formatting properties
                Top color         top_color       set_top_color()
                Left color        left_color      set_left_color()
                Right color       right_color     set_right_color()
+               Diagional type    diag_type       set_diag_type()
+               Diagional border  diag_border     set_diag_border()
+               Diagional color   diag_color      set_diag_color()
 
 There are two ways of setting Format properties: by using the object method interface or by setting the property directly. For example, a typical use of the method interface would be as follows:
 
@@ -3041,6 +3127,9 @@ The following Format methods are available:
     set_top_color()
     set_left_color()
     set_right_color()
+    set_diag_type()
+    set_diag_border()
+    set_diag_color()
 
 
 The above methods can also be applied directly as properties. For example C<< $format->set_bold() >> is equivalent to C<< $workbook->add_format(bold => 1) >>.
@@ -3664,6 +3753,47 @@ Examples of the available border styles are shown in the 'Borders' worksheet cre
 Set the colour of the cell borders. A cell border is comprised of a border on the bottom, top, left and right. These can be set to the same colour using C<set_border_color()> or individually using the relevant method calls shown above. Examples of the border styles and colours are shown in the 'Borders' worksheet created by formats.pl.
 
 
+=head2 set_diag_type()
+
+    Default state:      Diagonal border is off.
+    Default action:     None.
+    Valid args:         1-3, See below.
+
+Set the diagonal border type for the cell. Three types of diagonal borders are available in Excel:
+
+   1: From bottom left to top right.
+   2: From top left to bottom right.
+   3: Same as 1 and 2 combined.
+
+For example:
+
+    $format->set_diag_type( 3 );
+
+
+
+=head2 set_diag_border()
+
+    Default state:      Border is off
+    Default action:     Set border type 1
+    Valid args:         0-13, See below.
+
+Set the diagonal border style. Same as the parmater to C<set_border()> above.
+
+
+
+
+=head2 set_diag_color()
+
+    Default state:      Color is off
+    Default action:     Undefined
+    Valid args:         See set_color()
+
+
+Set the colour of the diagonal cell border:
+
+    $format->set_diag_type( 3 );
+    $format->set_diag_border( 7 );
+    $format->set_diag_color( 'red' );
 
 
 
@@ -4033,7 +4163,7 @@ A typical use case might be to restrict data in a cell to integer values in a ce
 
 =begin html
 
-<p><center><img src="http://jmcnamara.github.com/excel-writer-xlsx/images/examples/validation_example.jpg" alt="The output from the above example"/></center></p>
+<p><center><img src="http://jmcnamara.github.io/excel-writer-xlsx/images/examples/validation_example.jpg" alt="The output from the above example"/></center></p>
 
 =end html
 
@@ -4433,7 +4563,7 @@ For example the following criteria is used to highlight cells >= 50 in red in th
 
 =begin html
 
-<p><center><img src="http://jmcnamara.github.com/excel-writer-xlsx/images/examples/conditional_example.jpg" alt="The output from the above example"/></center></p>
+<p><center><img src="http://jmcnamara.github.io/excel-writer-xlsx/images/examples/conditional_example.jpg" alt="The output from the above example"/></center></p>
 
 =end html
 
@@ -4455,7 +4585,7 @@ It can be applied to a single cell or a range of cells. You can pass 3 parameter
 
 See also the note about L</Cell notation> for more information.
 
-Using C<A1> style notation is is also possible to specify non-contiguous ranges, separated by a comma. For example:
+Using C<A1> style notation is also possible to specify non-contiguous ranges, separated by a comma. For example:
 
     $worksheet->conditional_formatting( 'A1:D5,A8:D12', {...} );
 
@@ -5074,7 +5204,7 @@ In Excel::Writer::XLSX Sparklines can be added to cells using the C<add_sparklin
 
 =begin html
 
-<p><center><img src="http://jmcnamara.github.com/excel-writer-xlsx/images/examples/sparklines1.jpg" alt="Sparklines example."/></center></p>
+<p><center><img src="http://jmcnamara.github.io/excel-writer-xlsx/images/examples/sparklines1.jpg" alt="Sparklines example."/></center></p>
 
 =end html
 
@@ -5355,7 +5485,7 @@ Tables in Excel are a way of grouping a range of cells into a single entity that
 
 =begin html
 
-<p><center><img src="http://jmcnamara.github.com/excel-writer-xlsx/images/examples/tables.jpg" width="640" height="420" alt="Output from tables.pl" /></center></p>
+<p><center><img src="http://jmcnamara.github.io/excel-writer-xlsx/images/examples/tables.jpg" width="640" height="420" alt="Output from tables.pl" /></center></p>
 
 =end html
 
@@ -5513,6 +5643,7 @@ The sub-properties that can be set are:
     formula
     total_string
     total_function
+    total_value
     format
 
 The column data must be specified as an array ref of hash refs. For example to override the default 'Column n' style table headers:
@@ -5566,7 +5697,7 @@ Column formulas can by applied using the C<formula> column property:
 
 The Excel 2007 C<[#This Row]> and Excel 2010 C<@> structural references are supported within the formula.
 
-As stated above the C<total_row> table parameter turns on the "Total" row in the table but it doesn't populate it with any defaults. Total captions and functions must be specified via the C<columns> property and the C<total_string> and C<total_function> sub properties:
+As stated above the C<total_row> table parameter turns on the "Total" row in the table but it doesn't populate it with any defaults. Total captions and functions must be specified via the C<columns> property and the C<total_string>, C<total_function> and C<total_value> sub properties:
 
     $worksheet10->add_table(
         'B3:F8',
@@ -5595,6 +5726,26 @@ The supported totals row C<SUBTOTAL> functions are:
         var
 
 User defined functions or formulas aren't supported.
+
+It is also possible to set a calculated value for the C<total_function> using the C<total_value> sub property. This is only necessary when creating workbooks for applications that cannot calculate the value of formulas automatically. This is similar to setting the C<value> optional property in C<write_formula()>:
+
+    $worksheet10->add_table(
+        'B3:F8',
+        {
+            data      => $data,
+            total_row => 1,
+            columns   => [
+                { total_string   => 'Totals' },
+                { total_function => 'sum', total_value => 100 },
+                { total_function => 'sum', total_value => 200 },
+                { total_function => 'sum', total_value => 100 },
+                { total_function => 'sum', total_value => 400 },
+            ]
+        }
+    );
+
+
+
 
 Format can also be applied to columns:
 
@@ -5729,6 +5880,101 @@ If your formula doesn't work in Excel::Writer::XLSX try the following:
 
 
 
+=head1 WORKING WITH VBA MACROS
+
+An Excel C<xlsm> file is exactly the same as a C<xlsx> file except that is includes an additional C<vbaProject.bin> file which contains functions and/or macros. Excel uses a different extension to differentiate between the two file formats since files containing macros are usually subject to additional security checks.
+
+The C<vbaProject.bin> file is a binary OLE COM container. This was the format used in older C<xls> versions of Excel prior to Excel 2007. Unlike all of the other components of an xlsx/xlsm file the data isn't stored in XML format. Instead the functions and macros as stored as pre-parsed binary format. As such it wouldn't be feasible to define macros and create a C<vbaProject.bin> file from scratch (at least not in the remaining lifespan and interest levels of the author).
+
+Instead a workaround is used to extract C<vbaProject.bin> files from existing xlsm files and then add these to Excel::Writer::XLSX files.
+
+
+=head2 The extract_vba utility
+
+The C<extract_vba> utility is used to extract the C<vbaProject.bin> binary from an Excel 2007+ xlsm file. The utility is included in the Excel::Writer::XLSX bin directory and is also installed as a standalone executable file:
+
+    $ extract_vba macro_file.xlsm
+    Extracted: vbaProject.bin
+
+
+=head2 Adding the VBA macros to a Excel::Writer::XLSX file
+
+Once the C<vbaProject.bin> file has been extracted it can be added to the Excel::Writer::XLSX workbook using the C<add_vba_project()> method:
+
+    $workbook->add_vba_project( './vbaProject.bin' );
+
+If the VBA file contains functions you can then refer to them in calculations using C<write_formula>:
+
+    $worksheet->write_formula( 'A1', '=MyMortgageCalc(200000, 25)' );
+
+Excel files that contain functions and macros should use an C<xlsm> extension or else Excel will complain and possibly not open the file:
+
+    my $workbook  = Excel::Writer::XLSX->new( 'file.xlsm' );
+
+It is also possible to assign a macro to a button that is inserted into a
+worksheet using the C<insert_button()> method:
+
+    my $workbook  = Excel::Writer::XLSX->new( 'file.xlsm' );
+    ...
+    $workbook->add_vba_project( './vbaProject.bin' );
+
+    $worksheet->insert_button( 'C2', { macro => 'my_macro' } );
+
+
+It may be necessary to specify a more explicit macro name prefixed by the workbook VBA name as follows:
+
+    $worksheet->insert_button( 'C2', { macro => 'ThisWorkbook.my_macro' } );
+
+See the C<macros.pl> from the examples directory for a working example.
+
+Note: Button is the only VBA Control supported by Excel::Writer::XLSX. Due to the large effort in implementation (1+ man months) it is unlikely that any other form elements will be added in the future.
+
+
+=head2 Setting the VBA codenames
+
+VBA macros generally refer to workbook and worksheet objects. If the VBA codenames aren't specified then Excel::Writer::XLSX will use the Excel defaults of C<ThisWorkbook> and C<Sheet1>, C<Sheet2> etc.
+
+If the macro uses other codenames you can set them using the workbook and worksheet C<set_vba_name()> methods as follows:
+
+      $workbook->set_vba_name( 'MyWorkbook' );
+      $worksheet->set_vba_name( 'MySheet' );
+
+You can find the names that are used in the VBA editor or by unzipping the C<xlsm> file and grepping the files. The following shows how to do that using libxml's xmllint L<http://xmlsoft.org/xmllint.html> to format the XML for clarity:
+
+    $ unzip myfile.xlsm -d myfile
+    $ xmllint --format `find myfile -name "*.xml" | xargs` | grep "Pr.*codeName"
+
+      <workbookPr codeName="MyWorkbook" defaultThemeVersion="124226"/>
+      <sheetPr codeName="MySheet"/>
+
+
+Note: This step is particularly important for macros created with non-English versions of Excel.
+
+
+
+=head2 What to do if it doesn't work
+
+This feature should be considered experimental and there is no guarantee that it will work in all cases. Some effort may be required and some knowledge of VBA will certainly help. If things don't work out here are some things to try:
+
+=over
+
+=item *
+
+Start with a simple macro file, ensure that it works and then add complexity.
+
+=item *
+
+Try to extract the macros from an Excel 2007 file. The method should work with macros from later versions (it was also tested with Excel 2010 macros). However there may be features in the macro files of more recent version of Excel that aren't backward compatible.
+
+=item *
+
+Check the code names that macros use to refer to the workbook and worksheets (see the previous section above). In general VBA uses a code name of C<ThisWorkbook> to refer to the current workbook and the sheet name (such as C<Sheet1>) to refer to the worksheets. These are the defaults used by Excel::Writer::XLSX. If the macro uses other names then you can specify these using the workbook and worksheet C<set_vba_name()> methods:
+
+      $workbook>set_vba_name( 'MyWorkbook' );
+      $worksheet->set_vba_name( 'MySheet' );
+
+=back
+
 
 =head1 EXAMPLES
 
@@ -5757,9 +6003,9 @@ The following example shows some of the basic features of Excel::Writer::XLSX.
 
 
     # Write some numbers
-    $worksheet->write( 2, 0, 1 );
-    $worksheet->write( 3, 0, 1.00000 );
-    $worksheet->write( 4, 0, 2.00001 );
+    $worksheet->write( 2, 0, 3 );
+    $worksheet->write( 3, 0, 3.00000 );
+    $worksheet->write( 4, 0, 3.00001 );
     $worksheet->write( 5, 0, 3.14159 );
 
 
@@ -5769,12 +6015,17 @@ The following example shows some of the basic features of Excel::Writer::XLSX.
 
 
     # Write a hyperlink
-    $worksheet->write( 10, 0, 'http://www.perl.com/' );
+    my $hyperlink_format = $workbook->add_format(
+        color     => 'blue',
+        underline => 1,
+    );
+
+    $worksheet->write( 10, 0, 'http://www.perl.com/', $hyperlink_format );
 
 
 =begin html
 
-<p><center><img src="http://jmcnamara.github.com/excel-writer-xlsx/images/examples/a_simple.jpg" width="640" height="420" alt="Output from a_simple.pl" /></center></p>
+<p><center><img src="http://jmcnamara.github.io/excel-writer-xlsx/images/examples/a_simple.jpg" width="640" height="420" alt="Output from a_simple.pl" /></center></p>
 
 =end html
 
@@ -5827,7 +6078,7 @@ The following is a general example which demonstrates some features of working w
 
 =begin html
 
-<p><center><img src="http://jmcnamara.github.com/excel-writer-xlsx/images/examples/regions.jpg" width="640" height="420" alt="Output from regions.pl" /></center></p>
+<p><center><img src="http://jmcnamara.github.io/excel-writer-xlsx/images/examples/regions.jpg" width="640" height="420" alt="Output from regions.pl" /></center></p>
 
 =end html
 
@@ -5910,7 +6161,7 @@ Example of how to add conditional formatting to an Excel::Writer::XLSX file. The
 =begin html
 
 
-<p><center><img src="http://jmcnamara.github.com/excel-writer-xlsx/images/examples/conditional_format.jpg" width="640" height="420" alt="Output from conditional_format.pl" /></center></p>
+<p><center><img src="http://jmcnamara.github.io/excel-writer-xlsx/images/examples/conditional_format.jpg" width="640" height="420" alt="Output from conditional_format.pl" /></center></p>
 
 
 =end html
@@ -5986,7 +6237,7 @@ The following is a simple example of using functions.
 
 =begin html
 
-<p><center><img src="http://jmcnamara.github.com/excel-writer-xlsx/images/examples/stats.jpg" width="640" height="420" alt="Output from stats.pl" /></center></p>
+<p><center><img src="http://jmcnamara.github.io/excel-writer-xlsx/images/examples/stats.jpg" width="640" height="420" alt="Output from stats.pl" /></center></p>
 
 =end html
 
@@ -6058,12 +6309,17 @@ different features and options of the module. See L<Excel::Writer::XLSX::Example
     chart_column.pl         A demo of column (histogram) style charts.
     chart_line.pl           A demo of line style charts.
     chart_pie.pl            A demo of pie style charts.
+    chart_doughnut.pl       A demo of dougnut style charts.
     chart_radar.pl          A demo of radar style charts.
     chart_scatter.pl        A demo of scatter style charts.
     chart_secondary_axis.pl A demo of a line chart with a secondary axis.
+    chart_combined.pl       A demo of a combined column and line chart.
+    chart_pareto.pl         A demo of a combined Pareto chart.
     chart_stock.pl          A demo of stock style charts.
     chart_data_table.pl     A demo of a chart with a data table on the axis.
     chart_data_tools.pl     A demo of charts with data highlighting options.
+    chart_clustered.pl      A demo of a chart with a clustered axis.
+    chart_styles.pl         A demo of the available chart styles.
     colors.pl               A demo of the colour palette and named colours.
     comments1.pl            Add comments to worksheet cells.
     comments2.pl            Add comments with advanced options.
@@ -6197,7 +6453,7 @@ It supports all of the features of Spreadsheet::WriteExcel with some minor diffe
     show_comments()             Yes
     set_comments_author()       Yes
     add_write_handler()         Yes
-    insert_image()              Yes/Partial, see docs.
+    insert_image()              Yes.
     insert_chart()              Yes
     insert_shape()              Yes. Not in Spreadsheet::WriteExcel.
     insert_button()             Yes. Not in Spreadsheet::WriteExcel.
@@ -6486,12 +6742,6 @@ For other Perl-Excel modules try the following search: L<http://search.cpan.org/
 
 =over
 
-=item * Zero values for formulas results.
-
-Some versions of Excel 2007 do not display the calculated values of formulas written by Excel::Writer::XLSX. This is a bug in Excel since Excel::Writer::XLSX sets the required flag for recalculating formulas on opening.
-
-Applying all available Service Packs to Excel should fix this. Alternatively you can supply calculated values for all formulas that you write.
-
 =item * Memory usage is very high for large worksheets.
 
 If you run out of memory creating large worksheets use the C<set_optimization()> method. See L</SPEED AND MEMORY USAGE> for more information.
@@ -6620,6 +6870,6 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-Copyright MM-MMXIII, John McNamara.
+Copyright MM-MMXV, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.
