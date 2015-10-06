@@ -13,8 +13,11 @@
            envir = parent.frame())
 }
 \arguments{
-  \item{x}{A character vector containing either the names of one or more R
-        data frames, or the single name of a list containing one or more
+  \item{x}{Either: 1. A named list containing one or more R data frames 
+        (the name of each list item will be used as the tab name for each corresponding data frame),
+        2. A character vector containing either the names of one or more R
+        data frames, or 
+        3. the single name of a list containing one or more
 	R data frames, to be exported to the Excel file.}
   \item{ExcelFileName}{The name of the Excel file to be created.
         If the file extension is \emph{.XLS}, an Excel 2003 file will be

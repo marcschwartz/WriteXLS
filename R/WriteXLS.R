@@ -35,11 +35,13 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
   XLSX <- grepl("\\.XLSX$", toupper(ExcelFileName))
 
   
+  # If 'x' is a list then use that list directly, assuming it is a named list of data tables.
   # If 'x' is a single name, it is either a single data frame or a list of data frames
   # If 'x' is >1 names in a character vector, it is presumed to be a vector of data frame names.
   # If not a list name, create a list of data frames from the vector, for consistency in subsequent processing.
-  if (length(x) == 1)
-  {
+  if (is.list(x)) {
+    DF.LIST <- x
+  } else if (length(x) == 1) {
     TMP <- get(as.character(x), envir = envir)
     
     # is TMP a list and not single data frame    
