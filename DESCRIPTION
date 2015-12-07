@@ -1,6 +1,6 @@
 Package: WriteXLS
-Version: 3.6.1
-Date: 2015-07-02
+Version: 4.0.0
+Date: 2015-11-07
 Title: Cross-Platform Perl Based R Function to Create Excel 2003 (XLS) and Excel 2007 (XLSX) Files
 Description: Cross-platform Perl based R function to create Excel 2003 (XLS) and Excel 2007 (XLSX)
              files from one or more data frames. Each data frame will be
@@ -10,7 +10,8 @@ Description: Cross-platform Perl based R function to create Excel 2003 (XLS) and
 Author: Marc Schwartz <marc_schwartz@me.com> and various authors for Perl modules listed in each .pm file.
 Copyright: The copyright holders of the Perl files are listed in each .pm file under the Perl directory.
 Maintainer: Marc Schwartz <marc_schwartz@me.com>
-License: GPL-2
+License: GPL (>= 2)
 SystemRequirements: Perl
 Imports: utils
 URL: https://github.com/marcschwartz/WriteXLS
+BugReports: https://github.com/marcschwartz/WriteXLS/issues

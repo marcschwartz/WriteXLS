@@ -9,13 +9,16 @@
            verbose = FALSE, Encoding = c("UTF-8", "latin1", "cp1252"),
            row.names = FALSE, col.names = TRUE,
            AdjWidth = FALSE, AutoFilter = FALSE, BoldHeaderRow = FALSE,
+           na = "",
            FreezeRow = 0, FreezeCol = 0,
            envir = parent.frame())
 }
 \arguments{
-  \item{x}{A character vector containing either the names of one or more R
-        data frames, or the single name of a list containing one or more
-	R data frames, to be exported to the Excel file.}
+  \item{x}{A character vector or factor containing the names of one or more R
+        data frames; A character vector or factor containing the name of
+	a single list which contains one or more
+	R data frames; a single list object of one or more data frames; a single data
+	frame object.}
   \item{ExcelFileName}{The name of the Excel file to be created.
         If the file extension is \emph{.XLS}, an Excel 2003 file will be
         created. If the file extension is \emph{.XLSX}, an Excel 2007
@@ -46,6 +49,8 @@
         support this feature.}
   \item{BoldHeaderRow}{If \code{TRUE}, will apply a bold font to the
         header row for each worksheet.}
+  \item{na}{The string to use for missing values in the data. Defaults
+    to ""}
   \item{FreezeRow}{Rows including this row and above this row will be
         frozen and not scroll. The default value of \code{0} will scroll
 	the entire sheet. Note that not all spreadsheet applications
@@ -59,10 +64,13 @@
        \code{WriteXLS} was called.}
 }
 \details{
-  This function takes a character vector containing the names of one or
-  more R data frames and writes them to an Excel 2003 or 2007
+  This function takes: a character vector or factor containing the names of one or
+  more R data frames; A character vector or factor containing the name
+  of a single list which contains one or more R data frames; a single
+  list object containing one or more data frames; a
+  single data frame object and exports them to an Excel 2003 or 2007
   spreadsheet file. Each data frame will be written to a separate
-  worksheet in the Excel file.
+  worksheet in the same Excel file.
 
   The order of the worksheets created in the Excel file will match the
   order of the entries in \code{x}.
@@ -189,11 +197,11 @@
   \code{\link[utils]{write.table}}, \code{\link[WriteXLS]{testPerl}} and \code{\link[base]{comment}}
 }
 \examples{
-  # Only run the examples if Perl and all modules are present
+  ## Only run the examples if Perl and all modules are present
   if (testPerl(verbose = FALSE))
   {
-    # Examples using built-in data frames
-    # Create XLS (Excel 2003) files 
+    ## Examples using built-in data frames
+    ## Create XLS (Excel 2003) files 
     WriteXLS("iris", "iris.xls")
 
     WriteXLS(c("iris", "infert", "esoph"), "Example.xls")
@@ -201,14 +209,14 @@
     iris.split <- split(iris, iris$Species)
     WriteXLS("iris.split", "irissplit.xls")
 
-    # Example using comment()
-    # Commented cells with have a small red triangle in the
-    # upper right hand corner of the cell. Click on the cell
-    # or place the cursor over the cell to see the pop-up
-    # containing the comment text.
-    # Create an XLSX (Excel 2007) file
-    # Adjust the column widths
-    # Bold the header row
+    ## Example using comment()
+    ## Commented cells with have a small red triangle in the
+    ## upper right hand corner of the cell. Click on the cell
+    ## or place the cursor over the cell to see the pop-up
+    ## containing the comment text.
+    ## Create an XLSX (Excel 2007) file
+    ## Adjust the column widths
+    ## Bold the header row
     comment(iris$Sepal.Length) <- "Length of the sepals (cm)"
     comment(iris$Sepal.Width) <- "Width of the sepals (cm)"
     comment(iris$Petal.Length) <- "Length of the petals (cm)"
@@ -217,19 +225,25 @@
     WriteXLS("iris", "iriscomments.xlsx",
              AdjWidth = TRUE, BoldHeaderRow = TRUE)
 
-    # Add row names
+    ## Add row names
     WriteXLS("iris", "irisrownames.xlsx",
              AdjWidth = TRUE, BoldHeaderRow = TRUE, row.names = TRUE)
 
-    # Use latin1 Encoding
+    ## Use latin1 Encoding
     WriteXLS("iris", "irisLatin1.xls", Encoding = "latin1")
 
-    # Write a 0 row data frame
-    # Worksheet will contain header row only
+    ## Write a 0 row data frame
+    ## Worksheet will contain header row only
     DF0 <- data.frame("A" = numeric(), "B" = numeric(), "C" = numeric())
     WriteXLS("DF0", "DF0.xls", AdjWidth = TRUE, BoldHeaderRow = TRUE)
 
-    # Clean up and delete XLS files
+    ## 'x' is a single data frame object
+    WriteXLS(iris, "irisDF.xls")
+
+    ## 'x' is a list object containing data frames
+    WriteXLS(iris.split, "irisList.xls")
+
+    ## Clean up and delete XLS files
     rm(iris.split)
     rm(DF0)
     unlink("iris.xls")
@@ -239,6 +253,8 @@
     unlink("irisrownames.xlsx")
     unlink("irisLatin1.xls")
     unlink("DF0.xls")
+    unlink("irisDF.xls")
+    unlink("irisList.xls")
   }
 }
 \keyword{file}
