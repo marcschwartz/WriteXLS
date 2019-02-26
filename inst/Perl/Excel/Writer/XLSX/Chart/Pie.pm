@@ -8,7 +8,7 @@ package Excel::Writer::XLSX::Chart::Pie;
 #
 # See formatting note in Excel::Writer::XLSX::Chart.
 #
-# Copyright 2000-2015, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2019, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -22,7 +22,7 @@ use Carp;
 use Excel::Writer::XLSX::Chart;
 
 our @ISA     = qw(Excel::Writer::XLSX::Chart);
-our $VERSION = '0.84';
+our $VERSION = '0.99';
 
 
 ###############################################################################
@@ -152,6 +152,9 @@ sub _write_plot_area {
     # Write the subclass chart type element.
     $self->_write_chart_type();
 
+    # Write the c:spPr element for the plotarea formatting.
+    $self->_write_sp_pr( $self->{_plotarea} );
+
     $self->xml_end_tag( 'c:plotArea' );
 }
 
@@ -167,15 +170,16 @@ sub _write_plot_area {
 sub _write_legend {
 
     my $self          = shift;
-    my $position      = $self->{_legend_position};
-    my $font          = $self->{_legend_font};
+    my $legend        = $self->{_legend};
+    my $position      = $legend->{_position} || 'right';
+    my $font          = $legend->{_font};
     my @delete_series = ();
     my $overlay       = 0;
 
-    if ( defined $self->{_legend_delete_series}
-        && ref $self->{_legend_delete_series} eq 'ARRAY' )
+    if ( defined $legend->{_delete_series}
+        && ref $legend->{_delete_series} eq 'ARRAY' )
     {
-        @delete_series = @{ $self->{_legend_delete_series} };
+        @delete_series = @{ $legend->{_delete_series} };
     }
 
     if ( $position =~ s/^overlay_// ) {
@@ -183,10 +187,11 @@ sub _write_legend {
     }
 
     my %allowed = (
-        right  => 'r',
-        left   => 'l',
-        top    => 't',
-        bottom => 'b',
+        right     => 'r',
+        left      => 'l',
+        top       => 't',
+        bottom    => 'b',
+        top_right => 'tr',
     );
 
     return if $position eq 'none';
@@ -207,10 +212,13 @@ sub _write_legend {
     }
 
     # Write the c:layout element.
-    $self->_write_layout( $self->{_legend_layout}, 'legend' );
+    $self->_write_layout( $legend->{_layout}, 'legend' );
 
     # Write the c:overlay element.
     $self->_write_overlay() if $overlay;
+
+    # Write the c:spPr element.
+    $self->_write_sp_pr( $legend );
 
     # Write the c:txPr element. Over-ridden.
     $self->_write_tx_pr_legend( 0, $font );
@@ -495,6 +503,6 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-Copyright MM-MMXV, John McNamara.
+Copyright MM-MMXIX, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.

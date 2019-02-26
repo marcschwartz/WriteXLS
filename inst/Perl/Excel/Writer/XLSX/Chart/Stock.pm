@@ -8,7 +8,7 @@ package Excel::Writer::XLSX::Chart::Stock;
 #
 # See formatting note in Excel::Writer::XLSX::Chart.
 #
-# Copyright 2000-2015, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2019, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -22,7 +22,7 @@ use Carp;
 use Excel::Writer::XLSX::Chart;
 
 our @ISA     = qw(Excel::Writer::XLSX::Chart);
-our $VERSION = '0.84';
+our $VERSION = '0.99';
 
 
 ###############################################################################
@@ -115,9 +115,6 @@ sub _write_stock_chart {
 
     # Write the c:upDownBars element.
     $self->_write_up_down_bars();
-
-    # Write the c:marker element.
-    $self->_write_marker_value();
 
     # Write the c:axId elements
     $self->_write_axis_ids( %args );
@@ -312,7 +309,7 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-Copyright MM-MMXV, John McNamara.
+Copyright MM-MMXIX, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.
 

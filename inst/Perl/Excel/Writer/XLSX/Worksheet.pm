@@ -7,7 +7,7 @@ package Excel::Writer::XLSX::Worksheet;
 #
 # Used in conjunction with Excel::Writer::XLSX
 #
-# Copyright 2000-2015, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2019, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -30,7 +30,7 @@ use Excel::Writer::XLSX::Utility qw(xl_cell_to_rowcol
                                     quote_sheetname);
 
 our @ISA     = qw(Excel::Writer::XLSX::Package::XMLwriter);
-our $VERSION = '0.84';
+our $VERSION = '0.99';
 
 
 ###############################################################################
@@ -55,18 +55,19 @@ sub new {
     my $colmax = 16_384;
     my $strmax = 32767;
 
-    $self->{_name}            = $_[0];
-    $self->{_index}           = $_[1];
-    $self->{_activesheet}     = $_[2];
-    $self->{_firstsheet}      = $_[3];
-    $self->{_str_total}       = $_[4];
-    $self->{_str_unique}      = $_[5];
-    $self->{_str_table}       = $_[6];
-    $self->{_date_1904}       = $_[7];
-    $self->{_palette}         = $_[8];
-    $self->{_optimization}    = $_[9] || 0;
-    $self->{_tempdir}         = $_[10];
-    $self->{_excel2003_style} = $_[11];
+    $self->{_name}               = $_[0];
+    $self->{_index}              = $_[1];
+    $self->{_activesheet}        = $_[2];
+    $self->{_firstsheet}         = $_[3];
+    $self->{_str_total}          = $_[4];
+    $self->{_str_unique}         = $_[5];
+    $self->{_str_table}          = $_[6];
+    $self->{_date_1904}          = $_[7];
+    $self->{_palette}            = $_[8];
+    $self->{_optimization}       = $_[9] || 0;
+    $self->{_tempdir}            = $_[10];
+    $self->{_excel2003_style}    = $_[11];
+    $self->{_default_url_format} = $_[12];
 
     $self->{_ext_sheets}    = [];
     $self->{_fileclosed}    = 0;
@@ -86,9 +87,10 @@ sub new {
     $self->{_active}     = 0;
     $self->{_tab_color}  = 0;
 
-    $self->{_panes}       = [];
-    $self->{_active_pane} = 3;
-    $self->{_selected}    = 0;
+    $self->{_panes}                = [];
+    $self->{_active_pane}          = 3;
+    $self->{_selected}             = 0;
+    $self->{_hide_row_col_headers} = 0;
 
     $self->{_page_setup_changed} = 0;
     $self->{_paper_size}         = 0;
@@ -224,9 +226,11 @@ sub new {
         $self->{_fh}           = $fh;
     }
 
-    $self->{_validations}  = [];
-    $self->{_cond_formats} = {};
-    $self->{_dxf_priority} = 1;
+    $self->{_validations}        = [];
+    $self->{_cond_formats}       = {};
+    $self->{_data_bars_2010}     = [];
+    $self->{_use_data_bars_2010} = 0;
+    $self->{_dxf_priority}       = 1;
 
     if ( $self->{_excel2003_style} ) {
         $self->{_original_row_height}  = 12.75;
@@ -359,8 +363,8 @@ sub _assemble_xml_file {
     # Write the tableParts element.
     $self->_write_table_parts();
 
-    # Write the extLst and sparklines.
-    $self->_write_ext_sparklines();
+    # Write the extLst elements.
+    $self->_write_ext_list();
 
     # Close the worksheet tag.
     $self->xml_end_tag( 'worksheet' );
@@ -1682,6 +1686,19 @@ sub print_row_col_headers {
 
 ###############################################################################
 #
+# hide_row_col_headers()
+#
+# Set the option to hide the row and column headers in Excel.
+#
+sub hide_row_col_headers {
+
+    my $self = shift;
+    $self->{_hide_row_col_headers} = 1;
+}
+
+
+###############################################################################
+#
 # fit_to_pages($width, $height)
 #
 # Store the vertical and horizontal number of pages that will define the
@@ -1984,7 +2001,7 @@ sub write {
     }
 
     # Match number
-    elsif ( $token =~ /^([+-]?)(?=\d|\.\d)\d*(\.\d*)?([Ee]([+-]?\d+))?$/ ) {
+    elsif ( $token =~ /^([+-]?)(?=[0-9]|\.[0-9])[0-9]*(\.[0-9]*)?([Ee]([+-]?[0-9]+))?$/ ) {
         return $self->write_number( @_ );
     }
 
@@ -2599,6 +2616,44 @@ sub write_array_formula {
 
 ###############################################################################
 #
+# write_blank($row, $col, $format)
+#
+# Write a boolean value to the specified row and column (zero indexed).
+#
+# Returns  0 : normal termination (including no format)
+#         -2 : row or column out of range
+#
+sub write_boolean {
+
+    my $self = shift;
+
+    # Check for a cell reference in A1 notation and substitute row and column
+    if ( $_[0] =~ /^\D/ ) {
+        @_ = $self->_substitute_cellref( @_ );
+    }
+
+    my $row  = $_[0];            # Zero indexed row
+    my $col  = $_[1];            # Zero indexed column
+    my $val  = $_[2] ? 1 : 0;    # Boolean value.
+    my $xf   = $_[3];            # The cell format
+    my $type = 'l';              # The data type
+
+    # Check that row and col are valid and store max and min values
+    return -2 if $self->_check_dimensions( $row, $col );
+
+    # Write previous row if in in-line string optimization mode.
+    if ( $self->{_optimization} == 1 && $row > $self->{_previous_row} ) {
+        $self->_write_single_row( $row );
+    }
+
+    $self->{_table}->{$row}->{$col} = [ $type, $val, $xf ];
+
+    return 0;
+}
+
+
+###############################################################################
+#
 # outline_settings($visible, $symbols_below, $symbols_right, $auto_style)
 #
 # This method sets the properties for outlining and grouping. The defaults
@@ -2619,7 +2674,31 @@ sub outline_settings {
 
 ###############################################################################
 #
-# write_url($row, $col, $url, $string, $format)
+# Escape urls like Excel.
+#
+sub _escape_url {
+
+    my $url = shift;
+
+    # Don't escape URL if it looks already escaped.
+    return $url if $url =~ /%[0-9a-fA-F]{2}/;
+
+    # Escape the URL escape symbol.
+    $url =~ s/%/%25/g;
+
+    # Escape whitespace in URL.
+    $url =~ s/[\s\x00]/%20/g;
+
+    # Escape other special characters in URL.
+    $url =~ s/(["<>[\]`^{}])/sprintf '%%%x', ord $1/eg;
+
+    return $url;
+}
+
+
+###############################################################################
+#
+# write_url($row, $col, $url, format, $string)
 #
 # Write a hyperlink. This is comprised of two elements: the visible label and
 # the invisible link. The visible label is the same as the link unless an
@@ -2649,40 +2728,40 @@ sub write_url {
     if ( @_ < 3 ) { return -1 }    # Check the number of args
 
 
-    # Reverse the order of $string and $format if necessary. We work on a copy
-    # in order to protect the callers args. We don't use "local @_" in case of
-    # perl50005 threads.
+    # Reverse the order of $string and $format if necessary, for backward
+    # compatibility. We work on a copy in order to protect the callers
+    # args. We don't use "local @_" in case of perl50005 threads.
     my @args = @_;
-    ( $args[3], $args[4] ) = ( $args[4], $args[3] ) if ref $args[3];
-
+    if (defined $args[3] and !ref $args[3]) {
+        ( $args[3], $args[4] ) = ( $args[4], $args[3] );
+    }
 
     my $row       = $args[0];    # Zero indexed row
     my $col       = $args[1];    # Zero indexed column
     my $url       = $args[2];    # URL string
-    my $str       = $args[3];    # Alternative label
-    my $xf        = $args[4];    # Cell format
+    my $xf        = $args[3];    # Cell format
+    my $str       = $args[4];    # Alternative label
     my $tip       = $args[5];    # Tool tip
     my $type      = 'l';         # XML data type
     my $link_type = 1;
-
-
-    # Remove the URI scheme from internal links.
-    if ( $url =~ s/^internal:// ) {
-        $link_type = 2;
-    }
-
-    # Remove the URI scheme from external links.
-    if ( $url =~ s/^external:// ) {
-        $link_type = 3;
-    }
+    my $external  = 0;
 
     # The displayed string defaults to the url string.
     $str = $url unless defined $str;
 
-    # For external links change the directory separator from Unix to Dos.
-    if ( $link_type == 3 ) {
+    # Remove the URI scheme from internal links.
+    if ( $url =~ s/^internal:// ) {
+        $str =~ s/^internal://;
+        $link_type = 2;
+    }
+
+    # Remove the URI scheme from external links and change the directory
+    # separator from Unix to Dos.
+    if ( $url =~ s/^external:// ) {
+        $str =~ s/^external://;
         $url =~ s[/][\\]g;
         $str =~ s[/][\\]g;
+        $external = 1;
     }
 
     # Strip the mailto header.
@@ -2705,51 +2784,33 @@ sub write_url {
     # different characteristics that we have to account for.
     if ( $link_type == 1 ) {
 
-        # Escape URL unless it looks already escaped.
-        if ( $url !~ /%[0-9a-fA-F]{2}/ ) {
+        # Split url into the link and optional anchor/location.
+        ( $url, $url_str ) = split /#/, $url, 2;
 
-            # Escape the URL escape symbol.
-            $url =~ s/%/%25/g;
+        $url = _escape_url( $url );
 
-            # Escape whitespace in URL.
-            $url =~ s/[\s\x00]/%20/g;
-
-            # Escape other special characters in URL.
-            $url =~ s/(["<>[\]`^{}])/sprintf '%%%x', ord $1/eg;
+        # Escape the anchor for hyperlink style urls only.
+        if ( $url_str && !$external ) {
+            $url_str = _escape_url( $url_str );
         }
 
-        # Ordinary URL style external links don't have a "location" string.
-        $url_str = undef;
-    }
-    elsif ( $link_type == 3 ) {
-
-        # External Workbook links need to be modified into the right format.
-        # The URL will look something like 'c:\temp\file.xlsx#Sheet!A1'.
-        # We need the part to the left of the # as the URL and the part to
-        # the right as the "location" string (if it exists).
-        ( $url, $url_str ) = split /#/, $url;
-
-        # Add the file:/// URI to the $url if non-local.
-        if (
-            $url =~ m{[:]}         # Windows style "C:/" link.
-            || $url =~ m{^\\\\}    # Network share.
-          )
-        {
+        # Add the file:/// URI to the url for Windows style "C:/" link and
+        # Network shares.
+        if ( $url =~ m{^\w:} || $url =~ m{^\\\\} ) {
             $url = 'file:///' . $url;
         }
 
         # Convert a ./dir/file.xlsx link to dir/file.xlsx.
         $url =~ s{^.\\}{};
-
-        # Treat as a default external link now that the data has been modified.
-        $link_type = 1;
     }
 
-    # Excel limits escaped URL to 255 characters.
-    if ( length $url > 255 ) {
-        carp "Ignoring URL '$url' > 255 characters since it exceeds Excel's "
-          . "limit for URLS. See LIMITATIONS section of the "
-          . "Excel::Writer::XLSX documentation.";
+    # Excel limits the escaped URL and location/anchor to 255 characters.
+    my $tmp_url_str = $url_str || '';
+
+    if ( length $url > 255 || length $tmp_url_str > 255 ) {
+        carp "Ignoring URL '$url' where link or anchor > 255 characters "
+          . "since it exceeds Excel's limit for URLS. See LIMITATIONS "
+          . "section of the Excel::Writer::XLSX documentation.";
         return -4;
     }
 
@@ -2763,10 +2824,14 @@ sub write_url {
         return -5;
     }
 
-
     # Write previous row if in in-line string optimization mode.
     if ( $self->{_optimization} == 1 && $row > $self->{_previous_row} ) {
         $self->_write_single_row( $row );
+    }
+
+    # Add the default URL format.
+    if ( !defined $xf ) {
+        $xf = $self->{_default_url_format};
     }
 
     # Write the hyperlink string.
@@ -3332,15 +3397,21 @@ sub data_validation {
         $param->{validate} = $valid_type{ lc( $param->{validate} ) };
     }
 
+    # No action is required for validation type 'any'
+    # unless there are input messages.
+    if (   $param->{validate} eq 'none'
+        && !defined $param->{input_message}
+        && !defined $param->{input_title} )
+    {
+        return 0;
+    }
 
-    # No action is required for validation type 'any'.
-    # TODO: we should perhaps store 'any' for message only validations.
-    return 0 if $param->{validate} eq 'none';
-
-
-    # The list and custom validations don't have a criteria so we use a default
-    # of 'between'.
-    if ( $param->{validate} eq 'list' || $param->{validate} eq 'custom' ) {
+    # The any, list and custom validations don't have a criteria
+    # so we use a default of 'between'.
+    if (   $param->{validate} eq 'none'
+        || $param->{validate} eq 'list'
+        || $param->{validate} eq 'custom' )
+    {
         $param->{criteria} = 'between';
         $param->{maximum}  = undef;
     }
@@ -3420,27 +3491,16 @@ sub data_validation {
 
     # Convert date/times value if required.
     if ( $param->{validate} eq 'date' || $param->{validate} eq 'time' ) {
-        if ( $param->{value} =~ /T/ ) {
-            my $date_time = $self->convert_date_time( $param->{value} );
+        my $date_time = $self->convert_date_time( $param->{value} );
 
-            if ( !defined $date_time ) {
-                carp "Invalid date/time value '$param->{value}' "
-                  . "in data_validation()";
-                return -3;
-            }
-            else {
-                $param->{value} = $date_time;
-            }
+        if ( defined $date_time ) {
+            $param->{value} = $date_time;
         }
-        if ( defined $param->{maximum} && $param->{maximum} =~ /T/ ) {
+
+        if ( defined $param->{maximum} ) {
             my $date_time = $self->convert_date_time( $param->{maximum} );
 
-            if ( !defined $date_time ) {
-                carp "Invalid date/time value '$param->{maximum}' "
-                  . "in data_validation()";
-                return -3;
-            }
-            else {
+            if ( defined $date_time ) {
                 $param->{maximum} = $date_time;
             }
         }
@@ -3544,9 +3604,6 @@ sub conditional_formatting {
         @_ = $self->_substitute_cellref( @_ );
     }
 
-    # Check for a valid number of args.
-    if ( @_ != 5 && @_ != 3 ) { return -1 }
-
     # The final hashref contains the validation parameters.
     my $options = pop;
 
@@ -3574,22 +3631,39 @@ sub conditional_formatting {
 
     # List of valid input parameters.
     my %valid_parameter = (
-        type      => 1,
-        format    => 1,
-        criteria  => 1,
-        value     => 1,
-        minimum   => 1,
-        maximum   => 1,
-        min_type  => 1,
-        mid_type  => 1,
-        max_type  => 1,
-        min_value => 1,
-        mid_value => 1,
-        max_value => 1,
-        min_color => 1,
-        mid_color => 1,
-        max_color => 1,
-        bar_color => 1,
+        type                           => 1,
+        format                         => 1,
+        criteria                       => 1,
+        value                          => 1,
+        minimum                        => 1,
+        maximum                        => 1,
+        stop_if_true                   => 1,
+        min_type                       => 1,
+        mid_type                       => 1,
+        max_type                       => 1,
+        min_value                      => 1,
+        mid_value                      => 1,
+        max_value                      => 1,
+        min_color                      => 1,
+        mid_color                      => 1,
+        max_color                      => 1,
+        bar_color                      => 1,
+        bar_negative_color             => 1,
+        bar_negative_color_same        => 1,
+        bar_solid                      => 1,
+        bar_border_color               => 1,
+        bar_negative_border_color      => 1,
+        bar_negative_border_color_same => 1,
+        bar_no_border                  => 1,
+        bar_direction                  => 1,
+        bar_axis_position              => 1,
+        bar_axis_color                 => 1,
+        bar_only                       => 1,
+        icon_style                     => 1,
+        reverse_icons                  => 1,
+        icons_only                     => 1,
+        icons                          => 1,
+        data_bar_2010                  => 1,
     );
 
     # Check for valid input parameters.
@@ -3605,7 +3679,6 @@ sub conditional_formatting {
         carp "Parameter 'type' is required in conditional_formatting()";
         return -3;
     }
-
 
     # List of  valid validation types.
     my %valid_type = (
@@ -3627,6 +3700,7 @@ sub conditional_formatting {
         '3_color_scale' => '3_color_scale',
         'data_bar'      => 'dataBar',
         'formula'       => 'expression',
+        'icon_set'      => 'iconSet',
     );
 
 
@@ -3726,6 +3800,62 @@ sub conditional_formatting {
         }
     }
 
+
+    # List of valid icon styles.
+    my %icon_set_styles = (
+        "3_arrows"                => "3Arrows",            # 1
+        "3_flags"                 => "3Flags",             # 2
+        "3_traffic_lights_rimmed" => "3TrafficLights2",    # 3
+        "3_symbols_circled"       => "3Symbols",           # 4
+        "4_arrows"                => "4Arrows",            # 5
+        "4_red_to_black"          => "4RedToBlack",        # 6
+        "4_traffic_lights"        => "4TrafficLights",     # 7
+        "5_arrows_gray"           => "5ArrowsGray",        # 8
+        "5_quarters"              => "5Quarters",          # 9
+        "3_arrows_gray"           => "3ArrowsGray",        # 10
+        "3_traffic_lights"        => "3TrafficLights",     # 11
+        "3_signs"                 => "3Signs",             # 12
+        "3_symbols"               => "3Symbols2",          # 13
+        "4_arrows_gray"           => "4ArrowsGray",        # 14
+        "4_ratings"               => "4Rating",            # 15
+        "5_arrows"                => "5Arrows",            # 16
+        "5_ratings"               => "5Rating",            # 17
+    );
+
+
+    # Set properties for icon sets.
+    if ( $param->{type} eq 'iconSet' ) {
+
+        if ( !defined $param->{icon_style} ) {
+            carp "The 'icon_style' parameter must be specified when "
+              . "'type' == 'icon_set' in conditional_formatting()";
+            return -3;
+        }
+
+        # Check for valid icon styles.
+        if ( not exists $icon_set_styles{ $param->{icon_style} } ) {
+            carp "Unknown icon style '$param->{icon_style}' for parameter "
+              . "'icon_style' in conditional_formatting()";
+            return -3;
+        }
+        else {
+            $param->{icon_style} = $icon_set_styles{ $param->{icon_style} };
+        }
+
+        # Set the number of icons for the icon style.
+        $param->{total_icons} = 3;
+        if ( $param->{icon_style} =~ /^4/ ) {
+            $param->{total_icons} = 4;
+        }
+        elsif ( $param->{icon_style} =~ /^5/ ) {
+            $param->{total_icons} = 5;
+        }
+
+        $param->{icons} =
+          $self->_set_icon_properties( $param->{total_icons}, $param->{icons} );
+    }
+
+
     # Set the formatting range.
     my $range      = '';
     my $start_cell = '';    # Use for formulas.
@@ -3761,6 +3891,23 @@ sub conditional_formatting {
 
     # Set the priority based on the order of adding.
     $param->{priority} = $self->{_dxf_priority}++;
+
+    # Check for 2010 style data_bar parameters.
+    if (   $self->{_use_data_bars_2010}
+        || $param->{data_bar_2010}
+        || $param->{bar_solid}
+        || $param->{bar_border_color}
+        || $param->{bar_negative_color}
+        || $param->{bar_negative_color_same}
+        || $param->{bar_negative_border_color}
+        || $param->{bar_negative_border_color_same}
+        || $param->{bar_no_border}
+        || $param->{bar_axis_position}
+        || $param->{bar_axis_color}
+        || $param->{bar_direction} )
+    {
+        $param->{_is_data_bar_2010} = 1;
+    }
 
     # Special handling of text criteria.
     if ( $param->{type} eq 'text' ) {
@@ -3836,7 +3983,7 @@ sub conditional_formatting {
         elsif ( $param->{criteria} eq 'thisMonth' ) {
             $param->{formula} =
               sprintf 'AND(MONTH(%s)=MONTH(TODAY()),YEAR(%s)=YEAR(TODAY()))',
-              $start_cell, $start_cell, $start_cell;
+              $start_cell, $start_cell;
         }
         elsif ( $param->{criteria} eq 'nextMonth' ) {
             $param->{formula} =
@@ -3919,21 +4066,175 @@ sub conditional_formatting {
     # Special handling for data bar.
     if ( $param->{type} eq 'dataBar' ) {
 
-        # Color scales don't use any additional formatting.
+        # Excel 2007 data bars don't use any additional formatting.
         $param->{format} = undef;
 
-        $param->{min_type}  ||= 'min';
-        $param->{max_type}  ||= 'max';
-        $param->{min_value} ||= 0;
-        $param->{max_value} ||= 0;
-        $param->{bar_color} ||= '#638EC6';
+        if ( !defined $param->{min_type} ) {
+            $param->{min_type}      = 'min';
+            $param->{_x14_min_type} = 'autoMin';
+        }
+        else {
+            $param->{_x14_min_type} = $param->{min_type};
+        }
 
-        $param->{bar_color} = $self->_get_palette_color( $param->{bar_color} );
+        if ( !defined $param->{max_type} ) {
+            $param->{max_type}      = 'max';
+            $param->{_x14_max_type} = 'autoMax';
+        }
+        else {
+            $param->{_x14_max_type} = $param->{max_type};
+        }
+
+        $param->{min_value}                      ||= 0;
+        $param->{max_value}                      ||= 0;
+        $param->{bar_color}                      ||= '#638EC6';
+        $param->{bar_border_color}               ||= $param->{bar_color};
+        $param->{bar_only}                       ||= 0;
+        $param->{bar_no_border}                  ||= 0;
+        $param->{bar_solid}                      ||= 0;
+        $param->{bar_direction}                  ||= '';
+        $param->{bar_negative_color}             ||= '#FF0000';
+        $param->{bar_negative_border_color}      ||= '#FF0000';
+        $param->{bar_negative_color_same}        ||= 0;
+        $param->{bar_negative_border_color_same} ||= 0;
+        $param->{bar_axis_position}              ||= '';
+        $param->{bar_axis_color}                 ||= '#000000';
+
+        $param->{bar_color} =
+          $self->_get_palette_color( $param->{bar_color} );
+
+        $param->{bar_border_color} =
+          $self->_get_palette_color( $param->{bar_border_color} );
+
+        $param->{bar_negative_color} =
+          $self->_get_palette_color( $param->{bar_negative_color} );
+
+        $param->{bar_negative_border_color} =
+          $self->_get_palette_color( $param->{bar_negative_border_color} );
+
+        $param->{bar_axis_color} =
+          $self->_get_palette_color( $param->{bar_axis_color} );
+
     }
 
+    # Adjust for 2010 style data_bar parameters.
+    if ( $param->{_is_data_bar_2010} ) {
+
+        $self->{_excel_version} = 2010;
+
+        if ( $param->{min_type} eq 'min' && $param->{min_value} == 0 ) {
+            $param->{min_value} = undef;
+        }
+
+        if ( $param->{max_type} eq 'max' && $param->{max_value} == 0 ) {
+            $param->{max_value} = undef;
+        }
+
+        # Store range for Excel 2010 data bars.
+        $param->{_range} = $range;
+    }
+
+    # Strip the leading = from formulas.
+    $param->{min_value} =~ s/^=// if defined $param->{min_value};
+    $param->{mid_value} =~ s/^=// if defined $param->{mid_value};
+    $param->{max_value} =~ s/^=// if defined $param->{max_value};
 
     # Store the validation information until we close the worksheet.
     push @{ $self->{_cond_formats}->{$range} }, $param;
+}
+
+
+###############################################################################
+#
+# Set the sub-properites for icons.
+#
+sub _set_icon_properties {
+
+    my $self        = shift;
+    my $total_icons = shift;
+    my $user_props  = shift;
+    my $props       = [];
+
+    # Set the default icon properties.
+    for ( 0 .. $total_icons - 1 ) {
+        push @$props,
+          {
+            criteria => 0,
+            value    => 0,
+            type     => 'percent'
+          };
+    }
+
+    # Set the default icon values based on the number of icons.
+    if ( $total_icons == 3 ) {
+        $props->[0]->{value} = 67;
+        $props->[1]->{value} = 33;
+    }
+
+    if ( $total_icons == 4 ) {
+        $props->[0]->{value} = 75;
+        $props->[1]->{value} = 50;
+        $props->[2]->{value} = 25;
+    }
+
+    if ( $total_icons == 5 ) {
+        $props->[0]->{value} = 80;
+        $props->[1]->{value} = 60;
+        $props->[2]->{value} = 40;
+        $props->[3]->{value} = 20;
+    }
+
+    # Overwrite default properties with user defined properties.
+    if ( defined $user_props ) {
+
+        # Ensure we don't set user properties for lowest icon.
+        my $max_data = @$user_props;
+        if ( $max_data >= $total_icons ) {
+            $max_data = $total_icons -1;
+        }
+
+        for my $i ( 0 .. $max_data - 1 ) {
+
+            # Set the user defined 'value' property.
+            if ( defined $user_props->[$i]->{value} ) {
+                $props->[$i]->{value} = $user_props->[$i]->{value};
+                $props->[$i]->{value} =~ s/^=//;
+            }
+
+            # Set the user defined 'type' property.
+            if ( defined $user_props->[$i]->{type} ) {
+
+                my $type = $user_props->[$i]->{type};
+
+                if (   $type ne 'percent'
+                    && $type ne 'percentile'
+                    && $type ne 'number'
+                    && $type ne 'formula' )
+                {
+                    carp "Unknown icon property type '$props->{type}' for sub-"
+                      . "property 'type' in conditional_formatting()";
+                }
+                else {
+                    $props->[$i]->{type} = $type;
+
+                    if ( $props->[$i]->{type} eq 'number' ) {
+                        $props->[$i]->{type} = 'num';
+                    }
+                }
+            }
+
+            # Set the user defined 'criteria' property.
+            if ( defined $user_props->[$i]->{criteria}
+                && $user_props->[$i]->{criteria} eq '>' )
+            {
+                $props->[$i]->{criteria} = 1;
+            }
+
+        }
+
+    }
+
+    return $props;
 }
 
 
@@ -4025,6 +4326,26 @@ sub add_table {
 
     # Set the table name.
     if ( defined $param->{name} ) {
+        my $name = $param->{name};
+
+        # Warn if the name contains invalid chars as defined by Excel help.
+        if ( $name !~ m/^[\w\\][\w\\.]*$/ || $name =~ m/^\d/ ) {
+            carp "Invalid character in name '$name' used in add_table()";
+            return -3;
+        }
+
+        # Warn if the name looks like a cell name.
+        if ( $name =~ m/^[a-zA-Z][a-zA-Z]?[a-dA-D]?[0-9]+$/ ) {
+            carp "Invalid name '$name' looks like a cell name in add_table()";
+            return -3;
+        }
+
+        # Warn if the name looks like a R1C1.
+        if ( $name =~ m/^[rcRC]$/ || $name =~ m/^[rcRC]\d+[rcRC]\d+$/ ) {
+            carp "Invalid name '$name' like a RC cell ref in add_table()";
+            return -3;
+        }
+
         $table{_name} = $param->{name};
     }
 
@@ -4073,6 +4394,7 @@ sub add_table {
     }
 
     # Add the table columns.
+    my %seen_names;
     my $col_id = 1;
     for my $col_num ( $col1 .. $col2 ) {
 
@@ -4084,6 +4406,7 @@ sub add_table {
             _total_function => '',
             _formula        => '',
             _format         => undef,
+            _name_format    => undef,
         };
 
         # Overwrite the defaults with any use defined values.
@@ -4095,6 +4418,20 @@ sub add_table {
                 # Map user defined values to internal values.
                 $col_data->{_name} = $user_data->{header}
                   if $user_data->{header};
+
+                # Excel requires unique case insensitive header names.
+                my $name = $col_data->{_name};
+                my $key = lc $name;
+                if (exists $seen_names{$key}) {
+                    carp "add_table() contains duplicate name: '$name'";
+                    return -1;
+                }
+                else {
+                    $seen_names{$key} = 1;
+                }
+
+                # Get the header format if defined.
+                $col_data->{_name_format} = $user_data->{header_format};
 
                 # Handle the column formula.
                 if ( $user_data->{formula} ) {
@@ -4168,7 +4505,8 @@ sub add_table {
 
         # Write the column headers to the worksheet.
         if ( $param->{header_row} ) {
-            $self->write_string( $row1, $col_num, $col_data->{_name} );
+            $self->write_string( $row1, $col_num, $col_data->{_name},
+                $col_data->{_name_format} );
         }
 
         $col_id++;
@@ -4308,7 +4646,6 @@ sub add_sparkline {
 
     # Store the count.
     $sparkline->{_count} = @{ $sparkline->{_locations} };
-
 
     # Get the worksheet name for the range conversion below.
     my $sheetname = quote_sheetname( $self->{_name} );
@@ -4460,6 +4797,12 @@ sub _table_function_to_formula {
     my $col_name = shift;
     my $formula  = '';
 
+    # Escape special characters, as required by Excel.
+    $col_name =~ s/'/''/g;
+    $col_name =~ s/#/'#/g;
+    $col_name =~ s/\[/'[/g;
+    $col_name =~ s/]/']/g;
+
     my %subtotals = (
         average   => 101,
         countNums => 102,
@@ -4528,7 +4871,7 @@ sub _get_palette_color {
     # Palette is passed in from the Workbook class.
     my @rgb = @{ $palette->[$index] };
 
-    return sprintf "FF%02X%02X%02X", @rgb;
+    return sprintf "FF%02X%02X%02X", @rgb[0, 1, 2];
 }
 
 
@@ -4788,6 +5131,22 @@ sub _position_object_pixels {
 
     ( $col_start, $row_start, $x1, $y1, $width, $height ) = @_;
 
+    # Adjust start column for negative offsets.
+    while ( $x1 < 0 && $col_start > 0) {
+        $x1 += $self->_size_col( $col_start  - 1);
+        $col_start--;
+    }
+
+    # Adjust start row for negative offsets.
+    while ( $y1 < 0 && $row_start > 0) {
+        $y1 += $self->_size_row( $row_start - 1);
+        $row_start--;
+    }
+
+    # Ensure that the image isn't shifted off the page at top left.
+    $x1 = 0 if $x1 < 0;
+    $y1 = 0 if $y1 < 0;
+
     # Calculate the absolute x offset of the top-left vertex.
     if ( $self->{_col_size_changed} ) {
         for my $col_id ( 0 .. $col_start -1 ) {
@@ -4827,7 +5186,6 @@ sub _position_object_pixels {
         $y1 -= $self->_size_row( $row_start );
         $row_start++;
     }
-
 
     # Initialise end cell to the same as the start cell.
     $col_end = $col_start;
@@ -5754,6 +6112,7 @@ sub _prepare_tables {
 
     my $self     = shift;
     my $table_id = shift;
+    my $seen     = shift;
 
 
     for my $table ( @{ $self->{_tables} } ) {
@@ -5765,6 +6124,16 @@ sub _prepare_tables {
 
             # Set a default name.
             $table->{_name} = 'Table' . $table_id;
+        }
+
+        # Check for duplicate table names.
+        my $name = lc $table->{_name};
+
+        if ( exists $seen->{$name} ) {
+            die "error: invalid duplicate table name '$table->{_name}' found";
+        }
+        else {
+            $seen->{$name} = 1;
         }
 
         # Store the link used for the rels file.
@@ -5795,18 +6164,21 @@ sub _comment_params {
     my $default_height = 74;
 
     my %params = (
-        author     => undef,
-        color      => 81,
-        start_cell => undef,
-        start_col  => undef,
-        start_row  => undef,
-        visible    => undef,
-        width      => $default_width,
-        height     => $default_height,
-        x_offset   => undef,
-        x_scale    => 1,
-        y_offset   => undef,
-        y_scale    => 1,
+        author      => undef,
+        color       => 81,
+        start_cell  => undef,
+        start_col   => undef,
+        start_row   => undef,
+        visible     => undef,
+        width       => $default_width,
+        height      => $default_height,
+        x_offset    => undef,
+        x_scale     => 1,
+        y_offset    => undef,
+        y_scale     => 1,
+        font        => 'Tahoma',
+        font_size   => 8,
+        font_family => 2,
     );
 
 
@@ -5832,7 +6204,10 @@ sub _comment_params {
     my $color    = $params{color};
     my $color_id = &Excel::Writer::XLSX::Format::_get_color( $color );
 
-    if ( $color_id == 0 ) {
+    if ( $color_id =~ m/^#[0-9A-F]{6}$/i ) {
+        $params{color} = $color_id;
+    }
+    elsif ( $color_id == 0 ) {
         $params{color} = '#ffffe1';
     }
     else {
@@ -5840,13 +6215,13 @@ sub _comment_params {
 
         # Get the RGB color from the palette.
         my @rgb = @{ $palette->[ $color_id - 8 ] };
-        my $rgb_color = sprintf "%02x%02x%02x", @rgb;
+        my $rgb_color = sprintf "%02x%02x%02x", @rgb[0, 1, 2];
 
         # Minor modification to allow comparison testing. Change RGB colors
         # from long format, ffcc00 to short format fc0 used by VML.
         $rgb_color =~ s/^([0-9a-f])\1([0-9a-f])\2([0-9a-f])\3$/$1$2$3/;
 
-        $params{color} = sprintf "#%s [%d]\n", $rgb_color, $color_id;
+        $params{color} = sprintf "#%s [%d]", $rgb_color, $color_id;
     }
 
 
@@ -5930,8 +6305,11 @@ sub _comment_params {
         $params{author},
         $params{visible},
         $params{color},
+        $params{font},
+        $params{font_size},
+        $params{font_family},
 
-        [@vertices]
+        [@vertices],
     );
 }
 
@@ -6331,12 +6709,18 @@ sub _write_sheet_view {
     my $tab_selected     = $self->{_selected};
     my $view             = $self->{_page_view};
     my $zoom             = $self->{_zoom};
+    my $row_col_headers  = $self->{_hide_row_col_headers};
     my $workbook_view_id = 0;
     my @attributes       = ();
 
-    # Hide screen gridlines if required
+    # Hide screen gridlines if required.
     if ( !$gridlines ) {
         push @attributes, ( 'showGridLines' => 0 );
+    }
+
+    # Hide the row/column headers.
+    if ( $row_col_headers ) {
+        push @attributes, ( 'showRowColHeaders' => 0 );
     }
 
     # Hide zeroes in cells.
@@ -7029,6 +7413,15 @@ sub _write_cell {
         $self->_write_cell_value( $cell->[4] );
         $self->xml_end_tag( 'c' );
     }
+    elsif ( $type eq 'l' ) {
+
+        # Write a boolean value.
+        push @attributes, ( 't' => 'b' );
+
+        $self->xml_start_tag( 'c', @attributes );
+        $self->_write_cell_value( $cell->[1] );
+        $self->xml_end_tag( 'c' );
+    }
     elsif ( $type eq 'b' ) {
 
         # Write a empty cell.
@@ -7574,20 +7967,26 @@ sub _write_filter_column {
 #
 sub _write_filters {
 
-    my $self    = shift;
-    my @filters = @_;
+    my $self       = shift;
+    my @filters    = @_;
+    my @non_blanks = grep { !/^blanks$/i } @filters;
+    my @attributes = ();
 
-    if ( @filters == 1 && $filters[0] eq 'blanks' ) {
+    if ( @filters != @non_blanks ) {
+        @attributes = ( 'blank' => 1 );
+    }
+
+    if ( @filters == 1 && @non_blanks == 0 ) {
 
         # Special case for blank cells only.
-        $self->xml_empty_tag( 'filters', 'blank' => 1 );
+        $self->xml_empty_tag( 'filters', @attributes );
     }
     else {
 
         # General case.
-        $self->xml_start_tag( 'filters' );
+        $self->xml_start_tag( 'filters', @attributes );
 
-        for my $filter ( @filters ) {
+        for my $filter ( sort @non_blanks ) {
             $self->_write_filter( $filter );
         }
 
@@ -8422,10 +8821,14 @@ sub _write_data_validation {
     }
 
 
-    push @attributes, ( 'type' => $param->{validate} );
+    if ( $param->{validate} ne 'none' ) {
 
-    if ( $param->{criteria} ne 'between' ) {
-        push @attributes, ( 'operator' => $param->{criteria} );
+        push @attributes, ( 'type' => $param->{validate} );
+
+        if ( $param->{criteria} ne 'between' ) {
+            push @attributes, ( 'operator' => $param->{criteria} );
+        }
+
     }
 
     if ( $param->{error_type} ) {
@@ -8454,15 +8857,21 @@ sub _write_data_validation {
 
     push @attributes, ( 'sqref' => $sqref );
 
-    $self->xml_start_tag( 'dataValidation', @attributes );
+    if ( $param->{validate} eq 'none' ) {
+        $self->xml_empty_tag( 'dataValidation', @attributes );
+    }
+    else {
+        $self->xml_start_tag( 'dataValidation', @attributes );
 
-    # Write the formula1 element.
-    $self->_write_formula_1( $param->{value} );
+        # Write the formula1 element.
+        $self->_write_formula_1( $param->{value} );
 
-    # Write the formula2 element.
-    $self->_write_formula_2( $param->{maximum} ) if defined $param->{maximum};
+        # Write the formula2 element.
+        $self->_write_formula_2( $param->{maximum} )
+          if defined $param->{maximum};
 
-    $self->xml_end_tag( 'dataValidation' );
+        $self->xml_end_tag( 'dataValidation' );
+    }
 }
 
 
@@ -8569,6 +8978,9 @@ sub _write_cf_rule {
 
     push @attributes, ( 'priority' => $param->{priority} );
 
+    push @attributes, ( 'stopIfTrue' => 1 )
+      if $param->{stop_if_true};
+
     if ( $param->{type} eq 'cellIs' ) {
         push @attributes, ( 'operator' => $param->{criteria} );
 
@@ -8579,7 +8991,19 @@ sub _write_cf_rule {
             $self->_write_formula( $param->{maximum} );
         }
         else {
-            $self->_write_formula( $param->{value} );
+            my $value = $param->{value};
+
+            # String "Cell" values must be quoted, apart from ranges.
+            if (   $value !~ /(\$?)([A-Z]{1,3})(\$?)(\d+)/
+                && $value !~
+                /^([+-]?)(?=\d|\.\d)\d*(\.\d*)?([Ee]([+-]?\d+))?$/ )
+            {
+                if ( $value !~ /^".*"$/ ) {
+                    $value = qq("$value");
+                }
+            }
+
+            $self->_write_formula( $value );
         }
 
         $self->xml_end_tag( 'cfRule' );
@@ -8656,7 +9080,13 @@ sub _write_cf_rule {
     elsif ( $param->{type} eq 'dataBar' ) {
 
         $self->xml_start_tag( 'cfRule', @attributes );
+
         $self->_write_data_bar( $param );
+
+        if ($param->{_is_data_bar_2010}) {
+            $self->_write_data_bar_ext( $param );
+        }
+
         $self->xml_end_tag( 'cfRule' );
     }
     elsif ( $param->{type} eq 'expression' ) {
@@ -8665,8 +9095,58 @@ sub _write_cf_rule {
         $self->_write_formula( $param->{criteria} );
         $self->xml_end_tag( 'cfRule' );
     }
+    elsif ( $param->{type} eq 'iconSet' ) {
+
+        $self->xml_start_tag( 'cfRule', @attributes );
+        $self->_write_icon_set( $param );
+        $self->xml_end_tag( 'cfRule' );
+    }
 }
 
+
+##############################################################################
+#
+# _write_icon_set()
+#
+# Write the <iconSet> element.
+#
+sub _write_icon_set {
+
+    my $self        = shift;
+    my $param       = shift;
+    my $icon_style  = $param->{icon_style};
+    my $total_icons = $param->{total_icons};
+    my $icons       = $param->{icons};
+    my $i;
+
+    my @attributes = ();
+
+    # Don't set attribute for default style.
+    if ( $icon_style ne '3TrafficLights' ) {
+        @attributes = ( 'iconSet' => $icon_style );
+    }
+
+    if ( exists $param->{'icons_only'} && $param->{'icons_only'} ) {
+        push @attributes, ( 'showValue' => 0 );
+    }
+
+    if ( exists $param->{'reverse_icons'} && $param->{'reverse_icons'} ) {
+        push @attributes, ( 'reverse' => 1 );
+    }
+
+    $self->xml_start_tag( 'iconSet', @attributes );
+
+    # Write the properites for different icon styles.
+    for my $icon ( reverse @{ $param->{icons} } ) {
+        $self->_write_cfvo(
+            $icon->{'type'},
+            $icon->{'value'},
+            $icon->{'criteria'}
+        );
+    }
+
+    $self->xml_end_tag( 'iconSet' );
+}
 
 ##############################################################################
 #
@@ -8727,17 +9207,54 @@ sub _write_color_scale {
 #
 sub _write_data_bar {
 
-    my $self  = shift;
-    my $param = shift;
+    my $self       = shift;
+    my $data_bar   = shift;
+    my @attributes = ();
 
-    $self->xml_start_tag( 'dataBar' );
+    if ( $data_bar->{bar_only} ) {
+        push @attributes, ( 'showValue', 0 );
+    }
 
-    $self->_write_cfvo( $param->{min_type}, $param->{min_value} );
-    $self->_write_cfvo( $param->{max_type}, $param->{max_value} );
+    $self->xml_start_tag( 'dataBar', @attributes );
 
-    $self->_write_color( 'rgb' => $param->{bar_color} );
+    $self->_write_cfvo( $data_bar->{min_type}, $data_bar->{min_value} );
+    $self->_write_cfvo( $data_bar->{max_type}, $data_bar->{max_value} );
+
+    $self->_write_color( 'rgb' => $data_bar->{bar_color} );
 
     $self->xml_end_tag( 'dataBar' );
+}
+
+
+##############################################################################
+#
+# _write_data_bar_ext()
+#
+# Write the <extLst> dataBar extension element.
+#
+sub _write_data_bar_ext {
+
+    my $self      = shift;
+    my $param     = shift;
+
+    # Create a pseudo GUID for each unique Excel 2010 data bar.
+    my $worksheet_count = $self->{_index} + 1;
+    my $data_bar_count  = @{ $self->{_data_bars_2010} } + 1;
+
+    my $guid = sprintf "{DA7ABA51-AAAA-BBBB-%04X-%012X}", $worksheet_count,
+      $data_bar_count;
+
+    # Store the 2010 data bar parameters to write the extLst elements.
+    $param->{_guid} = $guid;
+    push @{$self->{_data_bars_2010}}, $param;
+
+    $self->xml_start_tag( 'extLst' );
+    $self->_write_ext('{B025F937-C7B1-47D3-B67F-A62EFF666E3E}');
+
+    $self->xml_data_element( 'x14:id', $guid);
+
+    $self->xml_end_tag( 'ext' );
+    $self->xml_end_tag( 'extLst' );
 }
 
 
@@ -8749,16 +9266,51 @@ sub _write_data_bar {
 #
 sub _write_cfvo {
 
-    my $self = shift;
-    my $type = shift;
-    my $val  = shift;
+    my $self     = shift;
+    my $type     = shift;
+    my $value    = shift;
+    my $criteria = shift;
 
-    my @attributes = (
-        'type' => $type,
-        'val'  => $val
-    );
+    my @attributes = ( 'type' => $type );
+
+    if ( defined $value ) {
+        push @attributes, ( 'val', $value );
+    }
+
+    if ( $criteria ) {
+        push @attributes, ( 'gte', 0 );
+    }
 
     $self->xml_empty_tag( 'cfvo', @attributes );
+}
+
+
+##############################################################################
+#
+# _write_x14_cfvo()
+#
+# Write the <cfvo> element.
+#
+sub _write_x14_cfvo {
+
+    my $self  = shift;
+    my $type  = shift;
+    my $value = shift;
+
+    my @attributes = ( 'type' => $type );
+
+    if (   $type eq 'min'
+        || $type eq 'max'
+        || $type eq 'autoMin'
+        || $type eq 'autoMax' )
+    {
+        $self->xml_empty_tag( 'x14:cfvo', @attributes );
+    }
+    else {
+        $self->xml_start_tag( 'x14:cfvo', @attributes );
+        $self->xml_data_element( 'xm:f', $value );
+        $self->xml_end_tag( 'x14:cfvo' );
+    }
 }
 
 
@@ -8830,25 +9382,291 @@ sub _write_table_part {
 
 ##############################################################################
 #
-# _write_ext_sparklines()
+# _write_ext_list()
 #
-# Write the <extLst> element and sparkline subelements.
+# Write the <extLst> element for data bars and sparklines.
 #
-sub _write_ext_sparklines {
+sub _write_ext_list {
+
+    my $self            = shift;
+    my $has_data_bars  = scalar @{ $self->{_data_bars_2010} };
+    my $has_sparklines = scalar @{ $self->{_sparklines} };
+
+    if ( !$has_data_bars and !$has_sparklines ) {
+        return;
+    }
+
+    # Write the extLst element.
+    $self->xml_start_tag( 'extLst' );
+
+    if ( $has_data_bars ) {
+        $self->_write_ext_list_data_bars();
+    }
+
+    if ( $has_sparklines ) {
+        $self->_write_ext_list_sparklines();
+    }
+
+    $self->xml_end_tag( 'extLst' );
+}
+
+
+##############################################################################
+#
+# _write_ext_list_data_bars()
+#
+# Write the Excel 2010 data_bar subelements.
+#
+sub _write_ext_list_data_bars {
+
+    my $self      = shift;
+    my @data_bars = @{ $self->{_data_bars_2010} };
+
+    # Write the ext element.
+    $self->_write_ext('{78C0D931-6437-407d-A8EE-F0AAD7539E65}');
+
+
+    $self->xml_start_tag( 'x14:conditionalFormattings' );
+
+    # Write each of the Excel 2010 conditional formatting data bar elements.
+    for my $data_bar (@data_bars) {
+
+        # Write the x14:conditionalFormatting element.
+        $self->_write_conditional_formatting_2010($data_bar);
+    }
+
+    $self->xml_end_tag( 'x14:conditionalFormattings' );
+    $self->xml_end_tag( 'ext' );
+
+
+}
+
+
+##############################################################################
+#
+# _write_conditional_formatting()
+#
+# Write the <x14:conditionalFormatting> element.
+#
+sub _write_conditional_formatting_2010 {
+
+    my $self     = shift;
+    my $data_bar = shift;
+    my $xmlns_xm = 'http://schemas.microsoft.com/office/excel/2006/main';
+
+    my @attributes = ( 'xmlns:xm' => $xmlns_xm );
+
+    $self->xml_start_tag( 'x14:conditionalFormatting', @attributes );
+
+    # Write the '<x14:cfRule element.
+    $self->_write_x14_cf_rule( $data_bar );
+
+    # Write the x14:dataBar element.
+    $self->_write_x14_data_bar( $data_bar );
+
+    # Write the x14 max and min data bars.
+    $self->_write_x14_cfvo( $data_bar->{_x14_min_type},
+        $data_bar->{min_value} );
+
+    $self->_write_x14_cfvo( $data_bar->{_x14_max_type},
+        $data_bar->{max_value} );
+
+    # Write the x14:borderColor element.
+    if ( !$data_bar->{bar_no_border} ) {
+        $self->_write_x14_border_color( $data_bar->{bar_border_color} );
+    }
+
+    # Write the x14:negativeFillColor element.
+    if ( !$data_bar->{bar_negative_color_same} ) {
+        $self->_write_x14_negative_fill_color(
+            $data_bar->{bar_negative_color} );
+    }
+
+    # Write the x14:negativeBorderColor element.
+    if (   !$data_bar->{bar_no_border}
+        && !$data_bar->{bar_negative_border_color_same} )
+    {
+        $self->_write_x14_negative_border_color(
+            $data_bar->{bar_negative_border_color} );
+    }
+
+    # Write the x14:axisColor element.
+    if ( $data_bar->{bar_axis_position} ne 'none') {
+        $self->_write_x14_axis_color($data_bar->{bar_axis_color});
+    }
+
+    # Write closing elements.
+    $self->xml_end_tag( 'x14:dataBar' );
+    $self->xml_end_tag( 'x14:cfRule' );
+
+    # Add the conditional format range.
+    $self->xml_data_element( 'xm:sqref', $data_bar->{_range} );
+
+    $self->xml_end_tag( 'x14:conditionalFormatting' );
+}
+
+
+##############################################################################
+#
+# _write_x14_cf_rule()
+#
+# Write the <'<x14:cfRule> element.
+#
+sub _write_x14_cf_rule {
+
+    my $self     = shift;
+    my $data_bar = shift;
+    my $type     = 'dataBar';
+    my $id       = $data_bar->{_guid};
+
+    my @attributes = (
+        'type' => $type,
+        'id'   => $id,
+    );
+
+    $self->xml_start_tag( 'x14:cfRule', @attributes );
+
+}
+
+
+##############################################################################
+#
+# _write_x14_data_bar()
+#
+# Write the <x14:dataBar> element.
+#
+sub _write_x14_data_bar {
+
+    my $self          = shift;
+    my $data_bar      = shift;
+    my $min_length    = 0;
+    my $max_length    = 100;
+
+    my @attributes = (
+        'minLength' => $min_length,
+        'maxLength' => $max_length,
+    );
+
+    if ( !$data_bar->{bar_no_border} ) {
+        push @attributes, ( 'border', 1 );
+    }
+
+    if ( $data_bar->{bar_solid} ) {
+        push @attributes, ( 'gradient', 0 );
+    }
+
+    if ( $data_bar->{bar_direction} eq 'left' ) {
+        push @attributes, ( 'direction', 'leftToRight' );
+    }
+
+    if ( $data_bar->{bar_direction} eq 'right' ) {
+        push @attributes, ( 'direction', 'rightToLeft' );
+    }
+
+    if ( $data_bar->{bar_negative_color_same} ) {
+        push @attributes, ( 'negativeBarColorSameAsPositive', 1 );
+    }
+
+    if (   !$data_bar->{bar_no_border}
+        && !$data_bar->{bar_negative_border_color_same} )
+    {
+        push @attributes, ( 'negativeBarBorderColorSameAsPositive', 0 );
+    }
+
+    if ( $data_bar->{bar_axis_position} eq 'middle') {
+        push @attributes, ( 'axisPosition', 'middle' );
+    }
+
+    if ( $data_bar->{bar_axis_position} eq 'none') {
+        push @attributes, ( 'axisPosition', 'none' );
+    }
+
+    $self->xml_start_tag( 'x14:dataBar', @attributes );
+}
+
+
+##############################################################################
+#
+# _write_x14_border_color()
+#
+# Write the <x14:borderColor> element.
+#
+sub _write_x14_border_color {
+
+    my $self = shift;
+    my $rgb  = shift;
+
+    my @attributes = ( 'rgb' => $rgb );
+
+    $self->xml_empty_tag( 'x14:borderColor', @attributes );
+}
+
+
+##############################################################################
+#
+# _write_x14_negative_fill_color()
+#
+# Write the <x14:negativeFillColor> element.
+#
+sub _write_x14_negative_fill_color {
+
+    my $self = shift;
+    my $rgb  = shift;
+
+    my @attributes = ( 'rgb' => $rgb );
+
+    $self->xml_empty_tag( 'x14:negativeFillColor', @attributes );
+}
+
+
+##############################################################################
+#
+# _write_x14_negative_border_color()
+#
+# Write the <x14:negativeBorderColor> element.
+#
+sub _write_x14_negative_border_color {
+
+    my $self = shift;
+    my $rgb  = shift;
+
+    my @attributes = ( 'rgb' => $rgb );
+
+    $self->xml_empty_tag( 'x14:negativeBorderColor', @attributes );
+}
+
+
+##############################################################################
+#
+# _write_x14_axis_color()
+#
+# Write the <x14:axisColor> element.
+#
+sub _write_x14_axis_color {
+
+    my $self = shift;
+    my $rgb  = shift;
+
+    my @attributes = ( 'rgb' => $rgb );
+
+    $self->xml_empty_tag( 'x14:axisColor', @attributes );
+}
+
+
+##############################################################################
+#
+# _write_ext_list_sparklines()
+#
+# Write the sparkline subelements.
+#
+sub _write_ext_list_sparklines {
 
     my $self       = shift;
     my @sparklines = @{ $self->{_sparklines} };
     my $count      = scalar @sparklines;
 
-    # Return if worksheet doesn't contain any sparklines.
-    return unless $count;
-
-
-    # Write the extLst element.
-    $self->xml_start_tag( 'extLst' );
-
     # Write the ext element.
-    $self->_write_ext();
+    $self->_write_ext('{05C60535-1F16-4fd2-B633-F4F36F0B64E0}');
 
     # Write the x14:sparklineGroups element.
     $self->_write_sparkline_groups();
@@ -8895,7 +9713,6 @@ sub _write_ext_sparklines {
 
     $self->xml_end_tag( 'x14:sparklineGroups' );
     $self->xml_end_tag( 'ext' );
-    $self->xml_end_tag( 'extLst' );
 }
 
 
@@ -8932,17 +9749,17 @@ sub _write_sparklines {
 #
 # _write_ext()
 #
-# Write the <ext> element.
+# Write the <ext> element for sparklines.
 #
 sub _write_ext {
 
-    my $self       = shift;
-    my $schema     = 'http://schemas.microsoft.com/office/';
-    my $xmlns_x_14 = $schema . 'spreadsheetml/2009/9/main';
-    my $uri        = '{05C60535-1F16-4fd2-B633-F4F36F0B64E0}';
+    my $self      = shift;
+    my $uri       = shift;
+    my $schema    = 'http://schemas.microsoft.com/office/';
+    my $xmlns_x14 = $schema . 'spreadsheetml/2009/9/main';
 
     my @attributes = (
-        'xmlns:x14' => $xmlns_x_14,
+        'xmlns:x14' => $xmlns_x14,
         'uri'       => $uri,
     );
 
@@ -9209,6 +10026,6 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-(c) MM-MMXV, John McNamara.
+(c) MM-MMXIX, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.

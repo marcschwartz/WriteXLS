@@ -150,6 +150,14 @@
   provide descriptive information for each column. This will work for
   both the Excel 2003 and 2007 file formats.
 
+  Since version 4.1.0, the function will preserve numbers with leading
+  zeroes in the resultant Excel file, whereas prior to this, leading
+  zeroes would be stripped prior to writing the cell content. If the
+  column being written to the Excel file has a mix of numbers with and
+  without leading zeroes, those with leading zeroes will be left
+  justified in the column as text, while the others will be right
+  justified as numeric. 
+  
   Note that arguments \code{AdjWidth}, \code{AutoFilter},
   \code{BoldHeaderRow}, \code{FreezeRow} and \code{FreezeCol} will apply
   to ALL worksheets exported.

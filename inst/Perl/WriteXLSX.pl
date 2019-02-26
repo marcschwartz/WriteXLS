@@ -253,6 +253,10 @@ foreach my $FileName (@FileNames) {
 
   my $WorkSheet = $XLSFile->add_worksheet($SheetName);
 
+  # enable sheetwide retention of leading zeros
+  # to handle entries such as numeric-like codes
+  $WorkSheet->keep_leading_zeros();
+
   # adjust column widths?
   # add a write handler to store the column string widths
   # This is done on a worksheet by worksheet basis and used by functions above

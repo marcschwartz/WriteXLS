@@ -6,7 +6,7 @@ package Excel::Writer::XLSX::Package::VML;
 #
 # Used in conjunction with Excel::Writer::XLSX
 #
-# Copyright 2000-2015, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2019, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -20,7 +20,7 @@ use Carp;
 use Excel::Writer::XLSX::Package::XMLwriter;
 
 our @ISA     = qw(Excel::Writer::XLSX::Package::XMLwriter);
-our $VERSION = '0.84';
+our $VERSION = '0.99';
 
 
 ###############################################################################
@@ -512,7 +512,7 @@ sub _write_comment_shape {
     my $author    = $comment->[3];
     my $visible   = $comment->[4];
     my $fillcolor = $comment->[5];
-    my $vertices  = $comment->[6];
+    my $vertices  = $comment->[9];
 
     my ( $left, $top, $width, $height ) = $self->_pixels_to_points( $vertices );
 
@@ -1199,7 +1199,7 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-(c) MM-MMXV, John McNamara.
+(c) MM-MMXIX, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.
 

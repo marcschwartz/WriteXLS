@@ -6,7 +6,7 @@ package Excel::Writer::XLSX::Shape;
 #
 # Used in conjunction with Excel::Writer::XLSX.
 #
-# Copyright 2000-2015, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2019, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -20,7 +20,7 @@ use Carp;
 use Exporter;
 
 our @ISA     = qw(Exporter);
-our $VERSION = '0.84';
+our $VERSION = '0.99';
 our $AUTOLOAD;
 
 ###############################################################################
@@ -275,7 +275,7 @@ sub _get_palette_color {
     # Palette is passed in from the Workbook class.
     my @rgb = @{ $palette->[$index] };
 
-    return sprintf "%02X%02X%02X", @rgb;
+    return sprintf "%02X%02X%02X", @rgb[0, 1, 2];
 }
 
 
@@ -637,6 +637,6 @@ Dave Clarke dclarke@cpan.org
 
 =head1 COPYRIGHT
 
-(c) MM-MMXV, John McNamara.
+(c) MM-MMXIX, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.
