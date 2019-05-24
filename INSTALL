@@ -1,5 +1,5 @@
 INSTALLING PERL AND RELATED MODULES TO USE WriteXLS
-June 23, 2015
+February 26, 2019
 
 
 BASIC REQUIREMENTS
@@ -20,9 +20,8 @@ BASIC REQUIREMENTS
 
 GENERAL COMMENTS
 
-As of this writing, the current release version of Perl is 5.22, however not all computer
-systems are using this version. Some will be using 5.18, 5.16, 5.14, 5.12 or even earlier
-distributions of Perl.
+As of this writing, the current release version of Perl is 5.28, however not all computer
+systems are using this version. Some will be using earlier distributions of Perl.
 
 File::Basename and Getopt::Long are "Core" Perl modules and should be part of a standard Perl installation.
 
@@ -103,8 +102,7 @@ available from:
 
   http://strawberryperl.com/
 
-If you should need a C compiler and related tools for Windows, please see the Rtools package
-from Duncan Murdoch at:
+If you should need a C compiler and related tools for Windows, please see the Rtools package at:
 
   http://cran.r-project.org/bin/windows/Rtools/
 
@@ -141,10 +139,10 @@ Lastly, ActiveState does offer a Linux compatible Perl distribution and PPM repo
 also an option for you.
 
 
-OSX
+macOS
 
-Apple installs a default Perl distribution with OSX on Macs. As of this writing, version 5.12 appears
-to be the most recent version on Mountain Lion (10.8).
+Apple installs a default Perl distribution with macOS on Macs. As of this writing, version 5.18 appears
+to be the most recent version on Mojave (10.14).
 
 As with Windows above, the easiest approach may very well be to replace/supercede Apple's installation with the
 ActiveState Perl installation, which would provide all of the required modules.

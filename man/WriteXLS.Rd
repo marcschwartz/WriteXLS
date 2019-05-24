@@ -89,8 +89,8 @@
   file or write to the folder you have indicated in the path to the file.
 
   There is an intermediate step, where the R data frames are first written
-  to CSV files using \code{write.table} before being written
-  to the Excel file by the Perl script. \code{tempdir} is used to determine the 
+  to CSV files using \code{writeLines} with argument \code{useBytes = TRUE} before being written
+  to the Excel file by the relevant Perl script. \code{tempdir} is used to determine the 
   current R session temporary directory and a new sub-directory called \dQuote{WriteXLS}
   will be created there. The CSV files will be written to that directory and
   both the files and the directory will be deleted prior to the function
@@ -98,16 +98,20 @@
   will remain in place if this function terminates abnormally or is aborted
   prior to completion.
 
-  As \code{write.table} is used to write the data frames to CSV files, the 
-  data types supported by \code{write.table} will be exported to their 
+  Since \code{as.character} is used to coerce data frame column content to character
+  vectors prior to export, data types supported by \code{as.character} will be exported to their 
   character representation correctly. For other data types, it is recommended
-  that you first coerce them to character columns formatted as you require
+  that you first coerce them to character columns, formatted as you require,
   and then use \code{WriteXLS} to create the Excel file.
 
   All of the CSV files will be created prior to the creation of the Excel file
   as the Perl script will loop over them as part of the process. Thus, 
   sufficient free disk space must be available for these files and the Excel
-  file at the same time.
+  file at the same time. Note, importantly, that in the course of creating XLSX files,
+  which are ZIP compressed XML files, Perl will require free disk space that is some
+  multiple of the size of the resultant XLSX file, in the course of creating the
+  XML files before compression into the XLSX file. Thus, additional free disk space,
+  in addition to the CSV files noted above, will also be required temporarily.
 
   A text file called "SheetNames.txt" will be created in the same
   temporary directory as the CSV files. This file will contain the sheet
@@ -136,12 +140,34 @@
   names: []:*?/\ 
   
   The data frame column names will be exported "as is" and will be the first 
-  row in the corresponding worksheet.
+  row in the corresponding worksheet, if \code{col.names = TRUE}.
+
+  As of version 4.1.0, the function will preserve numbers with leading
+  zeroes in the resultant Excel file, whereas prior to this, leading
+  zeroes would be stripped prior to writing the cell content. If the
+  column being written to the Excel file has a mix of numbers with and
+  without leading zeroes, those with leading zeroes will be left
+  justified in the column as text, while the others will be right
+  justified as numeric. 
 
   UTF-8 encoded content in the data frame should be properly exported by
   default. If you are operating in a 'latin1' based locale (also known
   as iso-8859-1) or a Windows CP-1252 locale, set \code{Encoding}
   to 'latin1' or 'cp1252', respectively.
+
+  As of version 5.0.0, Unicode character based content is better supported if
+  running on a Windows based operating system. This is achieved by generating
+  the intermediate CSV files using \code{writeLines(..., useBytes = TRUE)},
+  which should avoid the re-encoding of the content of the CSV files into the
+  operating locale of the relevant computer. Set \code{Encoding} to 'UTF-8' in
+  this case to preserve the Unicode content in the Excel file. Since
+  \code{Encoding} applies to all data frames and columns therein being
+  exported to the same Excel file, if mixed character encodings are present,
+  this may cause errors in the character representations in the Excel file.
+  If you note errors from Perl regarding characters not mapping to Unicode,
+  try setting \code{Encoding} to 'latin1'. If mixed encodings are present,
+  you may want to explore the use of \code{iconv} to standardize the data
+  to a single encoding.
 
   If one or more of the data frame columns have been assigned a
   \emph{comment} attribute using the \code{comment} function, these will
@@ -149,14 +175,6 @@
   the worksheet for each column with this attribute. These can serve to
   provide descriptive information for each column. This will work for
   both the Excel 2003 and 2007 file formats.
-
-  Since version 4.1.0, the function will preserve numbers with leading
-  zeroes in the resultant Excel file, whereas prior to this, leading
-  zeroes would be stripped prior to writing the cell content. If the
-  column being written to the Excel file has a mix of numbers with and
-  without leading zeroes, those with leading zeroes will be left
-  justified in the column as text, while the others will be right
-  justified as numeric. 
   
   Note that arguments \code{AdjWidth}, \code{AutoFilter},
   \code{BoldHeaderRow}, \code{FreezeRow} and \code{FreezeCol} will apply
@@ -202,7 +220,7 @@
   \url{http://www.perl.com/pub/2012/04/perlunicook-standard-preamble.html}
 }
 \seealso{
-  \code{\link[utils]{write.table}}, \code{\link[WriteXLS]{testPerl}} and \code{\link[base]{comment}}
+  \code{\link[base]{writeLines}}, \code{\link[WriteXLS]{testPerl}}, \code{\link[base]{comment} and \code{\link[base]{iconv}}
 }
 \examples{
   ## Only run the examples if Perl and all modules are present
