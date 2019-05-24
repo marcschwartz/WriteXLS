@@ -220,7 +220,7 @@
   \url{http://www.perl.com/pub/2012/04/perlunicook-standard-preamble.html}
 }
 \seealso{
-  \code{\link[base]{writeLines}}, \code{\link[WriteXLS]{testPerl}}, \code{\link[base]{comment} and \code{\link[base]{iconv}}
+  \code{\link[base]{writeLines}}, \code{\link[WriteXLS]{testPerl}}, \code{\link[base]{comment}} and \code{\link[base]{iconv}}
 }
 \examples{
   ## Only run the examples if Perl and all modules are present
