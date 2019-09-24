@@ -19,7 +19,8 @@
 
 
 WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl", verbose = FALSE,
-                     Encoding = c("UTF-8", "latin1", "cp1252"), row.names = FALSE, col.names = TRUE,
+                     Encoding = c("UTF-8", "latin1", "cp1252"), AllText = FALSE,
+                     row.names = FALSE, col.names = TRUE,
                      AdjWidth = FALSE, AutoFilter = FALSE, BoldHeaderRow = FALSE,
                      na = "", FreezeRow = 0, FreezeCol = 0,
                      envir = parent.frame())
@@ -237,6 +238,12 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
       Lines.Out <- c(COMMENTS, DF.Data)
     }
 
+    ## Now, replace any newline/carriage return characters with a space
+    ## to prevent a single line from wrapping to newlines when written to
+    ## the CSV file, resulting in corruption of the Excel file.
+    ## The regex will only insert a single space for '\r\n', '\r' or '\n'
+    Lines.Out <- gsub("\r?\n|\r", " ", Lines.Out)
+    
     writeLines(Lines.Out, con = paste(Tmp.Dir, "/", i, ".csv", sep = ""), useBytes = TRUE)
   }
 
@@ -265,6 +272,7 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
                " --FreezeRow ", FreezeRow,
                " --FreezeCol ", FreezeCol,
                " --Encoding ", Encoding,
+               " --AllText ", AllText,
                " ", shQuote(ExcelFileName), sep = "")
 
   ## Call the external Perl script and get the result of the call

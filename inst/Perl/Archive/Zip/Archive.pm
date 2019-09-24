@@ -9,18 +9,13 @@ use File::Spec ();
 use File::Copy ();
 use File::Basename;
 use Cwd;
+use Encode qw(encode_utf8 decode_utf8);
 
 use vars qw( $VERSION @ISA );
 
 BEGIN {
-    $VERSION = '1.48';
+    $VERSION = '1.66';
     @ISA     = qw( Archive::Zip );
-
-    if ($^O eq 'MSWin32') {
-        require Win32;
-        require Encode;
-        Encode->import(qw{ encode_utf8 decode_utf8 });
-    }
 }
 
 use Archive::Zip qw(
@@ -31,19 +26,33 @@ use Archive::Zip qw(
 );
 
 our $UNICODE;
+our $UNTAINT = qr/\A(.+)\z/;
 
 # Note that this returns undef on read errors, else new zip object.
 
 sub new {
     my $class = shift;
+    # Info-Zip 3.0 (I guess) seems to use the following values
+    # for the version fields in the zip64 EOCD record:
+    #
+    #   version made by: 
+    #     30 (plus upper byte indicating host system)
+    #
+    #   version needed to extract:
+    #     45
     my $self  = bless(
         {
-            'diskNumber'                            => 0,
-            'diskNumberWithStartOfCentralDirectory' => 0,
+            'zip64'                       => 0,
+            'desiredZip64Mode'            => ZIP64_AS_NEEDED,
+            'versionMadeBy'               => 0,
+            'versionNeededToExtract'      => 0,
+            'diskNumber'                  => 0,
+            'diskNumberWithStartOfCentralDirectory' =>
+              0,
             'numberOfCentralDirectoriesOnThisDisk' =>
               0,    # should be # of members
-            'numberOfCentralDirectories' => 0,    # should be # of members
-            'centralDirectorySize'       => 0,    # must re-compute on write
+            'numberOfCentralDirectories'  => 0,   # should be # of members
+            'centralDirectorySize'        => 0,   # must re-compute on write
             'centralDirectoryOffsetWRTStartingDiskNumber' =>
               0,                                  # must re-compute
             'writeEOCDOffset'             => 0,
@@ -95,6 +104,28 @@ sub membersMatching {
     my $self = shift;
     my $pattern = (ref($_[0]) eq 'HASH') ? shift->{regex} : shift;
     return grep { $_->fileName() =~ /$pattern/ } $self->members();
+}
+
+sub zip64 {
+    shift->{'zip64'};
+}
+
+sub desiredZip64Mode {
+    my $self = shift;
+    my $desiredZip64Mode = $self->{'desiredZip64Mode'};
+    if (@_) {
+        $self->{'desiredZip64Mode'} =
+          ref($_[0]) eq 'HASH' ? shift->{desiredZip64Mode} : shift;
+    }
+    return $desiredZip64Mode;
+}
+
+sub versionMadeBy {
+    shift->{'versionMadeBy'};
+}
+
+sub versionNeededToExtract {
+    shift->{'versionNeededToExtract'};
 }
 
 sub diskNumber {
@@ -190,6 +221,8 @@ sub extractMember {
         $dirName = File::Spec->catpath($volumeName, $dirName, '');
     } else {
         $name = $member->fileName();
+        if ((my $ret = _extractionNameIsSafe($name))
+            != AZ_OK) { return $ret; }
         ($dirName = $name) =~ s{[^/]*$}{};
         $dirName = Archive::Zip::_asLocalName($dirName);
         $name    = Archive::Zip::_asLocalName($name);
@@ -223,6 +256,8 @@ sub extractMemberWithoutPaths {
     unless ($name) {
         $name = $member->fileName();
         $name =~ s{.*/}{};    # strip off directories, if any
+        if ((my $ret = _extractionNameIsSafe($name))
+            != AZ_OK) { return $ret; }
         $name = Archive::Zip::_asLocalName($name);
     }
     my $rc = $member->extractToFileNamed($name, @_);
@@ -234,6 +269,10 @@ sub addMember {
     my $self = shift;
     my $newMember = (ref($_[0]) eq 'HASH') ? shift->{member} : shift;
     push(@{$self->{'members'}}, $newMember) if $newMember;
+    if($newMember && ($newMember->{bitFlag} & 0x800) 
+                  && !utf8::is_utf8($newMember->{fileName})){
+        $newMember->{fileName} = Encode::decode_utf8($newMember->{fileName});
+    }
     return $newMember;
 }
 
@@ -265,10 +304,7 @@ sub addFile {
     } else {
         $self->addMember($newMember);
     }
-    if ($^O eq 'MSWin32' && $Archive::Zip::UNICODE) {
-        $newMember->{'fileName'} =
-          encode_utf8(Win32::GetLongPathName($fileName));
-    }
+    
     return $newMember;
 }
 
@@ -317,9 +353,7 @@ sub addDirectory {
     } else {
         $self->addMember($newMember);
     }
-    if ($^O eq 'MSWin32' && $Archive::Zip::UNICODE) {
-        $newMember->{'fileName'} = encode_utf8(Win32::GetLongPathName($name));
-    }
+    
     return $newMember;
 }
 
@@ -367,10 +401,23 @@ sub contents {
         ($member, $newContents) = @_;
     }
 
-    return _error('No member name given') unless $member;
-    $member = $self->memberNamed($member) unless ref($member);
-    return undef unless $member;
-    return $member->contents($newContents);
+    my ($contents, $status) = (undef, AZ_OK);
+    if ($status == AZ_OK) {
+        $status = _error('No member name given') unless defined($member);
+    }
+    if ($status == AZ_OK && ! ref($member)) {
+        my $memberName = $member;
+        $member = $self->memberNamed($memberName);
+        $status = _error('No member named $memberName') unless defined($member);
+    }
+    if ($status == AZ_OK) {
+        ($contents, $status) = $member->contents($newContents);
+    }
+
+    return
+      wantarray
+      ? ($contents, $status)
+      : $contents;
 }
 
 sub writeToFileNamed {
@@ -386,11 +433,11 @@ sub writeToFileNamed {
     }
     my ($status, $fh) = _newFileHandle($fileName, 'w');
     return _ioError("Can't open $fileName for write") unless $status;
-    my $retval = $self->writeToFileHandle($fh, 1);
+    $status = $self->writeToFileHandle($fh, 1);
     $fh->close();
     $fh = undef;
 
-    return $retval;
+    return $status;
 }
 
 # It is possible to write data to the FH before calling this,
@@ -416,19 +463,63 @@ sub writeToFileHandle {
     my $offset = $fhIsSeekable ? $fh->tell() : 0;
     $offset = 0 if $offset < 0;
 
+    # (Re-)set the "was-successfully-written" flag so that the
+    # contract advertised in the documentation ("that member and
+    # *all following it* will return false from wasWritten()")
+    # also holds for members written more than once.
+    #
+    # Not sure whether that mechanism works, anyway.  If method
+    # $member->_writeToFileHandle fails with an error below and
+    # user continues with calling $zip->writeCentralDirectory
+    # manually, we should end up with the following picture
+    # unless the user seeks back to writeCentralDirectoryOffset:
+    #
+    #   ...
+    #   [last successfully written member]
+    #      <- writeCentralDirectoryOffset points here
+    #   [half-written member junk with unknown size]
+    #   [central directory entry 0]
+    #   ...
     foreach my $member ($self->members()) {
-        my $retval = $member->_writeToFileHandle($fh, $fhIsSeekable, $offset);
-        $member->endRead();
-        return $retval if $retval != AZ_OK;
-        $offset += $member->_localHeaderSize() + $member->_writeOffset();
-        $offset +=
-          $member->hasDataDescriptor()
-          ? DATA_DESCRIPTOR_LENGTH + SIGNATURE_LENGTH
-          : 0;
+        $member->{'wasWritten'} = 0;
+    }
 
-        # changed this so it reflects the last successful position
+    foreach my $member ($self->members()) {
+
+        # (Re-)set object member zip64 flag.  Here is what
+        # happens next to that flag:
+        #
+        #   $member->_writeToFileHandle
+        #       Determines a local flag value depending on
+        #       necessity and user desire and ors it to 
+        #       the object member
+        #     $member->_writeLocalFileHeader
+        #         Queries the object member to write appropriate
+        #         local header
+        #     $member->_writeDataDescriptor
+        #         Queries the object member to write appropriate
+        #         data descriptor
+        #   $member->_writeCentralDirectoryFileHeader
+        #       Determines a local flag value depending on
+        #       necessity and user desire.  Writes a central
+        #       directory header appropriate to the local flag.
+        #       Ors the local flag to the object member.
+        $member->{'zip64'} = 0;
+
+        my ($status, $memberSize) =
+          $member->_writeToFileHandle($fh, $fhIsSeekable, $offset,
+                                      $self->desiredZip64Mode());
+        $member->endRead();
+        return $status if $status != AZ_OK;
+
+        $offset += $memberSize;
+
+        # Change this so it reflects write status and last
+        # successful position
+        $member->{'wasWritten'} = 1;
         $self->{'writeCentralDirectoryOffset'} = $offset;
     }
+
     return $self->writeCentralDirectory($fh);
 }
 
@@ -501,20 +592,81 @@ sub _writeEOCDOffset {
 
 # Expects to have _writeEOCDOffset() set
 sub _writeEndOfCentralDirectory {
-    my ($self, $fh) = @_;
+    my ($self, $fh, $membersZip64) = @_;
+
+    my $zip64                                 = 0;
+    my $versionMadeBy                         = 0;
+    my $versionNeededToExtract                = 0;
+    my $diskNumber                            = 0;
+    my $diskNumberWithStartOfCentralDirectory = 0;
+    my $numberOfCentralDirectoriesOnThisDisk  = $self->numberOfMembers();
+    my $numberOfCentralDirectories            = $self->numberOfMembers();
+    my $centralDirectorySize =
+      $self->_writeEOCDOffset() - $self->_writeCentralDirectoryOffset();
+    my $centralDirectoryOffsetWRTStartingDiskNumber =
+      $self->_writeCentralDirectoryOffset();
+    my $zipfileCommentLength                  = length($self->zipfileComment());
+
+    my $eocdDataZip64 = 0;
+    $eocdDataZip64 ||= $numberOfCentralDirectoriesOnThisDisk > 0xffff;
+    $eocdDataZip64 ||= $numberOfCentralDirectories > 0xffff;
+    $eocdDataZip64 ||= $centralDirectorySize > 0xffffffff;
+    $eocdDataZip64 ||= $centralDirectoryOffsetWRTStartingDiskNumber > 0xffffffff;
+
+    if (   $membersZip64
+        || $eocdDataZip64
+        || $self->desiredZip64Mode() == ZIP64_EOCD) {
+        $zip64                  = 1;
+        $versionMadeBy          = 45;
+        $versionNeededToExtract = 45;
+
+        $self->_print($fh, ZIP64_END_OF_CENTRAL_DIRECTORY_RECORD_SIGNATURE_STRING)
+          or return _ioError('writing zip64 EOCD record signature');
+
+        my $record = pack(
+            ZIP64_END_OF_CENTRAL_DIRECTORY_RECORD_FORMAT,
+            ZIP64_END_OF_CENTRAL_DIRECTORY_RECORD_LENGTH +
+            SIGNATURE_LENGTH - 12,
+            $versionMadeBy,
+            $versionNeededToExtract,
+            $diskNumber,
+            $diskNumberWithStartOfCentralDirectory,
+            $numberOfCentralDirectoriesOnThisDisk,
+            $numberOfCentralDirectories,
+            $centralDirectorySize,
+            $centralDirectoryOffsetWRTStartingDiskNumber
+        );
+        $self->_print($fh, $record)
+          or return _ioError('writing zip64 EOCD record');
+
+        $self->_print($fh, ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_SIGNATURE_STRING)
+          or return _ioError('writing zip64 EOCD locator signature');
+
+        my $locator = pack(
+            ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_FORMAT,
+            0,
+            $self->_writeEOCDOffset(),
+            1
+        );
+        $self->_print($fh, $locator)
+          or return _ioError('writing zip64 EOCD locator');
+    }
 
     $self->_print($fh, END_OF_CENTRAL_DIRECTORY_SIGNATURE_STRING)
       or return _ioError('writing EOCD Signature');
-    my $zipfileCommentLength = length($self->zipfileComment());
 
     my $header = pack(
         END_OF_CENTRAL_DIRECTORY_FORMAT,
-        0,                          # {'diskNumber'},
-        0,                          # {'diskNumberWithStartOfCentralDirectory'},
-        $self->numberOfMembers(),   # {'numberOfCentralDirectoriesOnThisDisk'},
-        $self->numberOfMembers(),   # {'numberOfCentralDirectories'},
-        $self->_writeEOCDOffset() - $self->_writeCentralDirectoryOffset(),
-        $self->_writeCentralDirectoryOffset(),
+        $diskNumber,
+        $diskNumberWithStartOfCentralDirectory,
+        $numberOfCentralDirectoriesOnThisDisk > 0xffff
+          ? 0xffff : $numberOfCentralDirectoriesOnThisDisk,
+        $numberOfCentralDirectories > 0xffff
+          ? 0xffff : $numberOfCentralDirectories,
+        $centralDirectorySize > 0xffffffff
+          ? 0xffffffff : $centralDirectorySize,
+        $centralDirectoryOffsetWRTStartingDiskNumber > 0xffffffff
+          ? 0xffffffff : $centralDirectoryOffsetWRTStartingDiskNumber,
         $zipfileCommentLength
     );
     $self->_print($fh, $header)
@@ -523,6 +675,12 @@ sub _writeEndOfCentralDirectory {
         $self->_print($fh, $self->zipfileComment())
           or return _ioError('writing zipfile comment');
     }
+
+    # Adjust object members related to zip64 format
+    $self->{'zip64'}                  = $zip64;
+    $self->{'versionMadeBy'}          = $versionMadeBy;
+    $self->{'versionNeededToExtract'} = $versionNeededToExtract;
+
     return AZ_OK;
 }
 
@@ -546,13 +704,17 @@ sub writeCentralDirectory {
         $offset = $self->_writeCentralDirectoryOffset();
     }
 
+    my $membersZip64 = 0;
     foreach my $member ($self->members()) {
-        my $status = $member->_writeCentralDirectoryFileHeader($fh);
+        my ($status, $headerSize) =
+          $member->_writeCentralDirectoryFileHeader($fh, $self->desiredZip64Mode());
         return $status if $status != AZ_OK;
-        $offset += $member->_centralDirectoryHeaderSize();
+        $membersZip64 ||= $member->zip64();
+        $offset += $headerSize;
         $self->{'writeEOCDOffset'} = $offset;
     }
-    return $self->_writeEndOfCentralDirectory($fh);
+
+    return $self->_writeEndOfCentralDirectory($fh, $membersZip64);
 }
 
 sub read {
@@ -597,10 +759,11 @@ sub readFromFileHandle {
     my $status = $self->_findEndOfCentralDirectory($fh);
     return $status if $status != AZ_OK;
 
-    my $eocdPosition = $fh->tell();
-
-    $status = $self->_readEndOfCentralDirectory($fh);
+    my $eocdPosition;
+    ($status, $eocdPosition) = $self->_readEndOfCentralDirectory($fh, $fileName);
     return $status if $status != AZ_OK;
+
+    my $zip64 = $self->zip64();
 
     $fh->seek($eocdPosition - $self->centralDirectorySize(),
         IO::Seekable::SEEK_SET)
@@ -613,17 +776,33 @@ sub readFromFileHandle {
 
     for (; ;) {
         my $newMember =
-          Archive::Zip::Member->_newFromZipFile($fh, $fileName,
+          Archive::Zip::Member->_newFromZipFile($fh, $fileName, $zip64,
             $self->eocdOffset());
         my $signature;
         ($status, $signature) = _readSignature($fh, $fileName);
         return $status if $status != AZ_OK;
-        last if $signature == END_OF_CENTRAL_DIRECTORY_SIGNATURE;
+        if (! $zip64) {
+            last if $signature == END_OF_CENTRAL_DIRECTORY_SIGNATURE;
+        }
+        else {
+            last if $signature == ZIP64_END_OF_CENTRAL_DIRECTORY_RECORD_SIGNATURE;
+        }
         $status = $newMember->_readCentralDirectoryFileHeader();
         return $status if $status != AZ_OK;
         $status = $newMember->endRead();
         return $status if $status != AZ_OK;
-        $newMember->_becomeDirectoryIfNecessary();
+
+        if ($newMember->isDirectory()) {
+            $newMember->_become('Archive::Zip::DirectoryMember');
+            # Ensure above call suceeded to avoid future trouble
+            $newMember->_ISA('Archive::Zip::DirectoryMember') or
+              return $self->_error('becoming Archive::Zip::DirectoryMember');
+        }
+
+        if(($newMember->{bitFlag} & 0x800) && !utf8::is_utf8($newMember->{fileName})){
+            $newMember->{fileName} = Encode::decode_utf8($newMember->{fileName});
+        }
+
         push(@{$self->{'members'}}, $newMember);
     }
 
@@ -631,14 +810,136 @@ sub readFromFileHandle {
 }
 
 # Read EOCD, starting from position before signature.
-# Return AZ_OK on success.
+# Checks for a zip64 EOCD record and uses that if present.
+#
+# Return AZ_OK (in scalar context) or a pair (AZ_OK,
+# $eocdPosition) (in list context) on success:
+# ( $status, $eocdPosition ) = $zip->_readEndOfCentralDirectory( $fh, $fileName );
+# where the returned EOCD position either points to the beginning
+# of the EOCD or to the beginning of the zip64 EOCD record.
+#
+# APPNOTE.TXT as of version 6.3.6 is a bit vague on the
+# "ZIP64(tm) format".  It has a lot of conditions like "if an
+# archive is in ZIP64 format", but never explicitly mentions
+# *when* an archive is in that format.  (Or at least I haven't
+# found it.)
+#
+# So I decided that an archive is in ZIP64 format if zip64 EOCD
+# locator and zip64 EOCD record are present before the EOCD with
+# the format given in the specification.
 sub _readEndOfCentralDirectory {
-    my $self = shift;
-    my $fh   = shift;
+    my $self     = shift;
+    my $fh       = shift;
+    my $fileName = shift;
+
+    # Remember current position, which is just before the EOCD
+    # signature
+    my $eocdPosition = $fh->tell();
+
+    # Reset the zip64 format flag
+    $self->{'zip64'} = 0;
+    my $zip64EOCDPosition;
+
+    # Check for zip64 EOCD locator and zip64 EOCD record.  Be
+    # extra careful here to not interpret any random data as
+    # zip64 data structures.  If in doubt, silently continue
+    # reading the regular EOCD.
+  NOZIP64:
+    {
+        if ($eocdPosition < ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_LENGTH + SIGNATURE_LENGTH) {
+            last NOZIP64;
+        }
+
+        # Skip to before potential zip64 EOCD locator
+        $fh->seek(-(ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_LENGTH) - SIGNATURE_LENGTH,
+                  IO::Seekable::SEEK_CUR)
+          or return _ioError("seeking to before zip 64 EOCD locator");
+        my $zip64EOCDLocatorPosition =
+          $eocdPosition - ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_LENGTH - SIGNATURE_LENGTH;
+
+        my $status;
+        my $bytesRead;
+
+        # Read potential zip64 EOCD locator signature
+        $status =
+          _readSignature($fh, $fileName,
+                         ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_SIGNATURE, 1);
+        return $status if $status == AZ_IO_ERROR;
+        if ($status == AZ_FORMAT_ERROR) {
+            $fh->seek($eocdPosition, IO::Seekable::SEEK_SET)
+              or return _ioError("seeking to EOCD");
+            last NOZIP64;
+        }
+
+        # Read potential zip64 EOCD locator and verify it
+        my $locator = '';
+        $bytesRead = $fh->read($locator, ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_LENGTH);
+        if ($bytesRead != ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_LENGTH) {
+            return _ioError("reading zip64 EOCD locator");
+        }
+        (undef, $zip64EOCDPosition, undef) =
+          unpack(ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_FORMAT, $locator);
+        if ($zip64EOCDPosition >
+            ($zip64EOCDLocatorPosition - ZIP64_END_OF_CENTRAL_DIRECTORY_RECORD_LENGTH - SIGNATURE_LENGTH)) {
+            # No need to seek to EOCD since we're already there
+            last NOZIP64;
+        }
+
+        # Skip to potential zip64 EOCD record
+        $fh->seek($zip64EOCDPosition, IO::Seekable::SEEK_SET)
+          or return _ioError("seeking to zip64 EOCD record");
+
+        # Read potential zip64 EOCD record signature
+        $status =
+          _readSignature($fh, $fileName,
+                         ZIP64_END_OF_CENTRAL_DIRECTORY_RECORD_SIGNATURE, 1);
+        return $status if $status == AZ_IO_ERROR;
+        if ($status == AZ_FORMAT_ERROR) {
+            $fh->seek($eocdPosition, IO::Seekable::SEEK_SET)
+              or return _ioError("seeking to EOCD");
+            last NOZIP64;
+        }
+
+        # Read potential zip64 EOCD record.  Ignore the zip64
+        # extensible data sector.
+        my $record = '';
+        $bytesRead = $fh->read($record, ZIP64_END_OF_CENTRAL_DIRECTORY_RECORD_LENGTH);
+        if ($bytesRead != ZIP64_END_OF_CENTRAL_DIRECTORY_RECORD_LENGTH) {
+            return _ioError("reading zip64 EOCD record");
+        }
+
+        # Perform one final check, hoping that all implementors
+        # follow the recommendation of the specification
+        # regarding the size of the zip64 EOCD record
+        my ($zip64EODCRecordSize) = unpack("Q<", $record);
+        if ($zip64EOCDPosition + 12 + $zip64EODCRecordSize != $zip64EOCDLocatorPosition) {
+            $fh->seek($eocdPosition, IO::Seekable::SEEK_SET)
+              or return _ioError("seeking to EOCD");
+            last NOZIP64;
+        }
+
+        $self->{'zip64'} = 1;
+        (
+            undef,
+            $self->{'versionMadeBy'},
+            $self->{'versionNeededToExtract'},
+            $self->{'diskNumber'},
+            $self->{'diskNumberWithStartOfCentralDirectory'},
+            $self->{'numberOfCentralDirectoriesOnThisDisk'},
+            $self->{'numberOfCentralDirectories'},
+            $self->{'centralDirectorySize'},
+            $self->{'centralDirectoryOffsetWRTStartingDiskNumber'}
+        ) = unpack(ZIP64_END_OF_CENTRAL_DIRECTORY_RECORD_FORMAT, $record);
+
+        # Don't just happily bail out, we still need to read the
+        # zip file comment!
+        $fh->seek($eocdPosition, IO::Seekable::SEEK_SET)
+          or return _ioError("seeking to EOCD");
+    }    
 
     # Skip past signature
     $fh->seek(SIGNATURE_LENGTH, IO::Seekable::SEEK_CUR)
-      or return _ioError("Can't seek past EOCD signature");
+      or return _ioError("seeking past EOCD signature");
 
     my $header = '';
     my $bytesRead = $fh->read($header, END_OF_CENTRAL_DIRECTORY_LENGTH);
@@ -647,23 +948,27 @@ sub _readEndOfCentralDirectory {
     }
 
     my $zipfileCommentLength;
-    (
-        $self->{'diskNumber'},
-        $self->{'diskNumberWithStartOfCentralDirectory'},
-        $self->{'numberOfCentralDirectoriesOnThisDisk'},
-        $self->{'numberOfCentralDirectories'},
-        $self->{'centralDirectorySize'},
-        $self->{'centralDirectoryOffsetWRTStartingDiskNumber'},
-        $zipfileCommentLength
-    ) = unpack(END_OF_CENTRAL_DIRECTORY_FORMAT, $header);
-
-    if ($self->{'diskNumber'} == 0xFFFF ||
-           $self->{'diskNumberWithStartOfCentralDirectory'} == 0xFFFF ||
-           $self->{'numberOfCentralDirectoriesOnThisDisk'} == 0xFFFF ||
-           $self->{'numberOfCentralDirectories'} == 0xFFFF ||
-           $self->{'centralDirectorySize'} == 0xFFFFFFFF ||
-           $self->{'centralDirectoryOffsetWRTStartingDiskNumber'} == 0xFFFFFFFF) {
-        return _formatError("zip64 not supported");
+    if (! $self->{'zip64'}) {
+        (
+            $self->{'diskNumber'},
+            $self->{'diskNumberWithStartOfCentralDirectory'},
+            $self->{'numberOfCentralDirectoriesOnThisDisk'},
+            $self->{'numberOfCentralDirectories'},
+            $self->{'centralDirectorySize'},
+            $self->{'centralDirectoryOffsetWRTStartingDiskNumber'},
+            $zipfileCommentLength
+        ) = unpack(END_OF_CENTRAL_DIRECTORY_FORMAT, $header);
+    }
+    else {
+        (
+            undef,
+            undef,
+            undef,
+            undef,
+            undef,
+            undef,
+            $zipfileCommentLength
+        ) = unpack(END_OF_CENTRAL_DIRECTORY_FORMAT, $header);
     }
 
     if ($zipfileCommentLength) {
@@ -675,7 +980,18 @@ sub _readEndOfCentralDirectory {
         $self->{'zipfileComment'} = $zipfileComment;
     }
 
-    return AZ_OK;
+    if (! $self->{'zip64'}) {
+        return
+          wantarray
+          ? (AZ_OK, $eocdPosition)
+          : AZ_OK;
+    }
+    else {
+        return
+          wantarray
+          ? (AZ_OK, $zip64EOCDPosition)
+          : AZ_OK;
+    }
 }
 
 # Seek in my file to the end, then read backwards until we find the
@@ -726,7 +1042,7 @@ sub _findEndOfCentralDirectory {
 # you have bigger problems than this.
 sub _untaintDir {
     my $dir = shift;
-    $dir =~ m/\A(.+)\z/s;
+    $dir =~ m/$UNTAINT/s;
     return $1;
 }
 
@@ -773,7 +1089,8 @@ sub addTree {
     if ($^O eq 'MSWin32' && $Archive::Zip::UNICODE) {
         $root = Win32::GetANSIPathName($root);
     }
-    File::Find::find($wanted, $root);
+    # File::Find will not untaint unless you explicitly pass the flag and regex pattern.
+    File::Find::find({ wanted => $wanted, untaint => 1, untaint_pattern => $UNTAINT }, $root);
 
     my $rootZipName = _asZipDirName($root, 1);    # with trailing slash
     my $pattern = $rootZipName eq './' ? '^' : "^\Q$rootZipName\E";
@@ -828,6 +1145,37 @@ sub addTreeMatching {
     return $self->addTree($root, $dest, $matcher, $compressionLevel);
 }
 
+# Check if one of the components of a path to the file or the file name
+# itself is an already existing symbolic link. If yes then return an
+# error. Continuing and writing to a file traversing a link posseses
+# a security threat, especially if the link was extracted from an
+# attacker-supplied archive. This would allow writing to an arbitrary
+# file. The same applies when using ".." to escape from a working
+# directory. <https://bugzilla.redhat.com/show_bug.cgi?id=1591449>
+sub _extractionNameIsSafe {
+    my $name = shift;
+    my ($volume, $directories) = File::Spec->splitpath($name, 1);
+    my @directories = File::Spec->splitdir($directories);
+    if (grep '..' eq $_, @directories) {
+        return _error(
+            "Could not extract $name safely: a parent directory is used");
+    }
+    my @path;
+    my $path;
+    for my $directory (@directories) {
+        push @path, $directory;
+        $path = File::Spec->catpath($volume, File::Spec->catdir(@path), '');
+        if (-l $path) {
+            return _error(
+                "Could not extract $name safely: $path is an existing symbolic link");
+        }
+        if (!-e $path) {
+            last;
+        }
+    }
+    return AZ_OK;
+}
+
 # $zip->extractTree( $root, $dest [, $volume] );
 #
 # $root and $dest are Unix-style.
@@ -862,6 +1210,8 @@ sub extractTree {
         $fileName =~ s{$pattern}{$dest};       # in Unix format
                                                # convert to platform format:
         $fileName = Archive::Zip::_asLocalName($fileName, $volume);
+        if ((my $ret = _extractionNameIsSafe($fileName))
+            != AZ_OK) { return $ret; }
         my $status = $member->extractToFileNamed($fileName);
         return $status if $status != AZ_OK;
     }

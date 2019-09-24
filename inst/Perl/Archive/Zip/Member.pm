@@ -6,7 +6,7 @@ use strict;
 use vars qw( $VERSION @ISA );
 
 BEGIN {
-    $VERSION = '1.48';
+    $VERSION = '1.66';
     @ISA     = qw( Archive::Zip );
 
     if ($^O eq 'MSWin32') {
@@ -34,6 +34,10 @@ use constant DEFAULT_DIRECTORY_PERMISSIONS => 040755;
 use constant DEFAULT_FILE_PERMISSIONS      => 0100666;
 use constant DIRECTORY_ATTRIB              => 040000;
 use constant FILE_ATTRIB                   => 0100000;
+use constant OS_SUPPORTS_SYMLINK           => do {
+  local $@;
+  !!eval { symlink("",""); 1 };
+};
 
 # Returns self if successful, else undef
 # Assumes that fh is positioned at beginning of central directory file header.
@@ -94,9 +98,22 @@ sub newDirectoryNamed {
 
 sub new {
     my $class = shift;
+    # Info-Zip 3.0 (I guess) seems to use the following values
+    # for the version fields in local and central directory
+    # headers, regardless of whether the member has an zip64
+    # extended information extra field or not:
+    #
+    #   version made by: 
+    #     30
+    #
+    #   version needed to extract:
+    #     10 for directory and stored entries
+    #     20 for anything else
     my $self  = {
         'lastModFileDateTime'      => 0,
         'fileAttributeFormat'      => FA_UNIX,
+        'zip64'                    => 0,
+        'desiredZip64Mode'         => ZIP64_AS_NEEDED,
         'versionMadeBy'            => 20,
         'versionNeededToExtract'   => 20,
         'bitFlag'                  => ($Archive::Zip::UNICODE ? 0x0800 : 0),
@@ -112,9 +129,8 @@ sub new {
         'crc32'                    => 0,
         'compressedSize'           => 0,
         'uncompressedSize'         => 0,
-        'isSymbolicLink'           => 0,
-        'password' => undef,    # password for encrypted data
-        'crc32c'   => -1,       # crc for decrypted data
+        'password'                 => undef,    # password for encrypted data
+        'crc32c'                   => -1,       # crc for decrypted data
         @_
     };
     bless($self, $class);
@@ -122,20 +138,9 @@ sub new {
     return $self;
 }
 
-sub _becomeDirectoryIfNecessary {
-    my $self = shift;
-    $self->_become('Archive::Zip::DirectoryMember')
-      if $self->isDirectory();
-    return $self;
-}
-
 # Morph into given class (do whatever cleanup I need to do)
 sub _become {
     return bless($_[0], $_[1]);
-}
-
-sub versionMadeBy {
-    shift->{'versionMadeBy'};
 }
 
 sub fileAttributeFormat {
@@ -149,6 +154,24 @@ sub fileAttributeFormat {
     }
 }
 
+sub zip64 {
+    shift->{'zip64'};
+}
+
+sub desiredZip64Mode {
+    my $self = shift;
+    my $desiredZip64Mode = $self->{'desiredZip64Mode'};
+    if (@_) {
+        $self->{'desiredZip64Mode'} =
+          ref($_[0]) eq 'HASH' ? shift->{desiredZip64Mode} : shift;
+    }
+    return $desiredZip64Mode;
+}
+
+sub versionMadeBy {
+    shift->{'versionMadeBy'};
+}
+
 sub versionNeededToExtract {
     shift->{'versionNeededToExtract'};
 }
@@ -159,16 +182,16 @@ sub bitFlag {
 # Set General Purpose Bit Flags according to the desiredCompressionLevel setting
     if (   $self->desiredCompressionLevel == 1
         || $self->desiredCompressionLevel == 2) {
-        $self->{'bitFlag'} = DEFLATING_COMPRESSION_FAST;
+        $self->{'bitFlag'} |= DEFLATING_COMPRESSION_FAST;
     } elsif ($self->desiredCompressionLevel == 3
         || $self->desiredCompressionLevel == 4
         || $self->desiredCompressionLevel == 5
         || $self->desiredCompressionLevel == 6
         || $self->desiredCompressionLevel == 7) {
-        $self->{'bitFlag'} = DEFLATING_COMPRESSION_NORMAL;
+        $self->{'bitFlag'} |= DEFLATING_COMPRESSION_NORMAL;
     } elsif ($self->desiredCompressionLevel == 8
         || $self->desiredCompressionLevel == 9) {
-        $self->{'bitFlag'} = DEFLATING_COMPRESSION_MAXIMUM;
+        $self->{'bitFlag'} |= DEFLATING_COMPRESSION_MAXIMUM;
     }
 
     if ($Archive::Zip::UNICODE) {
@@ -229,6 +252,15 @@ sub fileName {
         $self->{'fileName'} = $newName;
     }
     return $self->{'fileName'};
+}
+
+sub fileNameAsBytes {
+    my $self  = shift;
+    my $bytes = $self->{'fileName'};
+    if($self->{'bitFlag'} & 0x800){
+        $bytes = Encode::encode_utf8($bytes);
+    }
+    return $bytes;
 }
 
 sub lastModFileDateTime {
@@ -382,8 +414,20 @@ sub localExtraField {
     my $self = shift;
 
     if (@_) {
-        $self->{localExtraField} =
+        my $localExtraField =
           (ref($_[0]) eq 'HASH') ? $_[0]->{field} : $_[0];
+        my ($status, $zip64) =
+          $self->_extractZip64ExtraField($localExtraField, undef, undef);
+        if ($status != AZ_OK) {
+            return $status;
+        }
+        elsif ($zip64) {
+            return _formatError('invalid extra field (contains zip64 information)');
+        }
+        else {
+            $self->{localExtraField} = $localExtraField;
+            return AZ_OK;
+        }
     } else {
         return $self->{localExtraField};
     }
@@ -393,7 +437,20 @@ sub cdExtraField {
     my $self = shift;
 
     if (@_) {
-        $self->{cdExtraField} = (ref($_[0]) eq 'HASH') ? $_[0]->{field} : $_[0];
+        my $cdExtraField =
+          (ref($_[0]) eq 'HASH') ? $_[0]->{field} : $_[0];
+        my ($status, $zip64) =
+          $self->_extractZip64ExtraField($cdExtraField, undef, undef);
+        if ($status != AZ_OK) {
+            return $status;
+        }
+        elsif ($zip64) {
+            return _formatError('invalid extra field (contains zip64 information)');
+        }
+        else {
+            $self->{cdExtraField} = $cdExtraField;
+            return AZ_OK;
+        }
     } else {
         return $self->{cdExtraField};
     }
@@ -479,36 +536,40 @@ sub extractToFileNamed {
 
     # local FS name
     my $name = (ref($_[0]) eq 'HASH') ? $_[0]->{name} : $_[0];
-    $self->{'isSymbolicLink'} = 0;
 
-    # Check if the file / directory is a symbolic link or not
-    if ($self->{'externalFileAttributes'} == 0xA1FF0000) {
-        $self->{'isSymbolicLink'} = 1;
-        $self->{'newName'}        = $name;
-        my ($status, $fh) = _newFileHandle($name, 'r');
-        my $retval = $self->extractToFileHandle($fh);
-        $fh->close();
+    # Create directory for regular files as well as for symbolic
+    # links
+    if ($^O eq 'MSWin32' && $Archive::Zip::UNICODE) {
+        $name = decode_utf8(Win32::GetFullPathName($name));
+        mkpath_win32($name);
     } else {
+        mkpath(dirname($name));    # croaks on error
+    }
 
-        #return _writeSymbolicLink($self, $name) if $self->isSymbolicLink();
-
+    # Check if the file / directory is a symbolic link *and* if
+    # the operating system supports these.  Only in that case
+    # call method extractToFileHandle with the name of the
+    # symbolic link.  If the operating system does not support
+    # symbolic links, process the member using the usual
+    # extraction routines, which creates a file containing the
+    # link target.
+    if ($self->isSymbolicLink() && OS_SUPPORTS_SYMLINK) {
+        return $self->extractToFileHandle($name);
+    } else {
         my ($status, $fh);
         if ($^O eq 'MSWin32' && $Archive::Zip::UNICODE) {
-            $name = decode_utf8(Win32::GetFullPathName($name));
-            mkpath_win32($name);
             Win32::CreateFile($name);
             ($status, $fh) = _newFileHandle(Win32::GetANSIPathName($name), 'w');
         } else {
-            mkpath(dirname($name));    # croaks on error
             ($status, $fh) = _newFileHandle($name, 'w');
         }
         return _ioError("Can't open file $name for write") unless $status;
-        my $retval = $self->extractToFileHandle($fh);
+        $status = $self->extractToFileHandle($fh);
         $fh->close();
         chmod($self->unixFileAttributes(), $name)
           or return _error("Can't chmod() ${name}: $!");
         utime($self->lastModTime(), $self->lastModTime(), $name);
-        return $retval;
+        return $status;
     }
 }
 
@@ -525,25 +586,8 @@ sub mkpath_win32 {
     }
 }
 
-sub _writeSymbolicLink {
-    my $self      = shift;
-    my $name      = shift;
-    my $chunkSize = $Archive::Zip::ChunkSize;
-
-    #my ( $outRef, undef ) = $self->readChunk($chunkSize);
-    my $fh;
-    my $retval = $self->extractToFileHandle($fh);
-    my ($outRef, undef) = $self->readChunk(100);
-}
-
 sub isSymbolicLink {
-    my $self = shift;
-    if ($self->{'externalFileAttributes'} == 0xA1FF0000) {
-        $self->{'isSymbolicLink'} = 1;
-    } else {
-        return 0;
-    }
-    1;
+    return shift->{'externalFileAttributes'} == 0xA1FF0000;
 }
 
 sub isDirectory {
@@ -552,6 +596,120 @@ sub isDirectory {
 
 sub externalFileName {
     return undef;
+}
+
+# Search the given extra field string for a zip64 extended
+# information extra field and "correct" the header fields given
+# in the remaining parameters with the information from that
+# extra field, if required.  Writes back the extra field string
+# sans the zip64 information.  The extra field string and all
+# header fields must be passed as lvalues or the undefined value.
+#
+# This method returns a pair ($status, $zip64) in list context,
+# where the latter flag specifies whether a zip64 extended
+# information extra field was found.
+#
+# This method must be called with two header fields for local
+# file headers and with four header fields for Central Directory
+# headers.
+sub _extractZip64ExtraField
+{
+    my $classOrSelf = shift;
+
+    my $extraField = $_[0];
+
+    my ($zip64Data, $newExtraField) = (undef, '');
+    while (length($extraField) >= 4) {
+        my ($headerId, $dataSize) = unpack('v v', $extraField);
+        if (length($extraField) < 4 + $dataSize) {
+            return _formatError('invalid extra field (bad data)');
+        }
+        elsif ($headerId != 0x0001) {
+            $newExtraField .= substr($extraField, 0, 4 + $dataSize);
+            $extraField     = substr($extraField, 4 + $dataSize);
+        }
+        else {
+            $zip64Data      = substr($extraField, 4, $dataSize);
+            $extraField     = substr($extraField, 4 + $dataSize);
+        }
+    }
+    if (length($extraField) != 0) {
+        return _formatError('invalid extra field (bad header ID or data size)');
+    }
+
+    my $zip64 = 0;
+    if (defined($zip64Data)) {
+        my $dataLength = length($zip64Data);
+
+        # Try to be tolerant with respect to the fields to be
+        # extracted from the zip64 extended information extra
+        # field and derive that information from the data itself,
+        # if possible.  This works around, for example, incorrect
+        # extra fields written by certain versions of package
+        # IO::Compress::Zip.  That package provides the disk
+        # number start in the extra field without setting the
+        # corresponding regular field to 0xffff.  Plus it
+        # provides the full set of fields even for the local file
+        # header.
+        #
+        # Field zero is the extra field string which we must keep
+        # in @_ for future modification, so account for that.
+        my @fields;
+        if (@_ == 3 && $dataLength == 16) {
+            @fields = (undef, 0xffffffff, 0xffffffff);
+        }
+        elsif (@_ == 3 && $dataLength == 24) {
+            push(@_, undef);
+            @fields = (undef, 0xffffffff, 0xffffffff, 0xffffffff);
+        }
+        elsif (@_ == 3 && $dataLength == 28) {
+            push(@_, undef, undef);
+            @fields = (undef, 0xffffffff, 0xffffffff, 0xffffffff, 0xffff);
+        }
+        elsif (@_ == 5 && $dataLength == 24) {
+            @fields = (undef, 0xffffffff, 0xffffffff, 0xffffffff);
+        }
+        elsif (@_ == 5 && $dataLength == 28) {
+            @fields = (undef, 0xffffffff, 0xffffffff, 0xffffffff, 0xffff);
+        }
+        else {
+            @fields = map { $_ // 0 } @_;
+        }
+
+        my @fieldIndexes  = (0);
+        my $fieldFormat   = '';
+        my $expDataLength = 0;
+        if ($fields[1] == 0xffffffff) {
+            push(@fieldIndexes, 1);
+            $fieldFormat .= 'Q< ';
+            $expDataLength += 8;
+        }
+        if ($fields[2] == 0xffffffff) {
+            push(@fieldIndexes, 2);
+            $fieldFormat .= 'Q< ';
+            $expDataLength += 8;
+        }
+        if (@fields > 3 && $fields[3] == 0xffffffff) {
+            push(@fieldIndexes, 3);
+            $fieldFormat .= 'Q< ';
+            $expDataLength += 8;
+        }
+        if (@fields > 3 && $fields[4] == 0xffff) {
+            push(@fieldIndexes, 4);
+            $fieldFormat .= 'L< ';
+            $expDataLength += 4;
+        }
+
+        if ($dataLength == $expDataLength) {
+            @_[@fieldIndexes] = ($newExtraField, unpack($fieldFormat, $zip64Data));
+            $zip64 = 1;
+        }
+        else {
+            return _formatError('invalid zip64 extended information extra field');
+        }
+    }
+
+    return (AZ_OK, $zip64);
 }
 
 # The following are used when copying data
@@ -567,7 +725,10 @@ sub writeLocalHeaderRelativeOffset {
     shift->{'writeLocalHeaderRelativeOffset'};
 }
 
-sub wasWritten { shift->{'wasWritten'} }
+# Maintained in method Archive::Zip::Archive::writeToFileHandle
+sub wasWritten {
+    shift->{'wasWritten'}
+}
 
 sub _dataEnded {
     shift->{'dataEnded'};
@@ -585,31 +746,6 @@ sub _deflater {
     shift->{'deflater'};
 }
 
-# Return the total size of my local header
-sub _localHeaderSize {
-    my $self = shift;
-    {
-        use bytes;
-        return SIGNATURE_LENGTH +
-          LOCAL_FILE_HEADER_LENGTH +
-          length($self->fileName()) +
-          length($self->localExtraField());
-    }
-}
-
-# Return the total size of my CD header
-sub _centralDirectoryHeaderSize {
-    my $self = shift;
-    {
-        use bytes;
-        return SIGNATURE_LENGTH +
-          CENTRAL_DIRECTORY_FILE_HEADER_LENGTH +
-          length($self->fileName()) +
-          length($self->cdExtraField()) +
-          length($self->fileComment());
-    }
-}
-
 # DOS date/time format
 # 0-4 (5) Second divided by 2
 # 5-10 (6) Minute (0-59)
@@ -624,7 +760,7 @@ sub _dosToUnixTime {
     my $dt = shift;
     return time() unless defined($dt);
 
-    my $year = (($dt >> 25) & 0x7f) + 80;
+    my $year = (($dt >> 25) & 0x7f) + 1980;
     my $mon  = (($dt >> 21) & 0x0f) - 1;
     my $mday = (($dt >> 16) & 0x1f);
 
@@ -641,7 +777,7 @@ sub _dosToUnixTime {
 
 # Note, this is not exactly UTC 1980, it's 1980 + 12 hours and 1
 # minute so that nothing timezoney can muck us up.
-my $safe_epoch = 315576060;
+my $safe_epoch = 31.666060;
 
 # convert a unix time to DOS date/time
 # NOT AN OBJECT METHOD!
@@ -666,129 +802,121 @@ sub _unixToDosTime {
     return $dt;
 }
 
-sub head {
-    my ($self, $mode) = (@_, 0);
-
-    use bytes;
-    return pack LOCAL_FILE_HEADER_FORMAT,
-      $self->versionNeededToExtract(),
-      $self->{'bitFlag'},
-      $self->desiredCompressionMethod(),
-      $self->lastModFileDateTime(), 
-      $self->hasDataDescriptor() 
-        ? (0,0,0) # crc, compr & uncompr all zero if data descriptor present
-        : (
-            $self->crc32(), 
-            $mode
-              ? $self->_writeOffset()       # compressed size
-              : $self->compressedSize(),    # may need to be re-written later
-            $self->uncompressedSize(),
-          ),
-      length($self->fileName()),
-      length($self->localExtraField());
-}
-
 # Write my local header to a file handle.
-# Stores the offset to the start of the header in my
-# writeLocalHeaderRelativeOffset member.
-# Returns AZ_OK on success.
+# Returns a pair (AZ_OK, $headerSize) on success.
 sub _writeLocalFileHeader {
-    my $self = shift;
-    my $fh   = shift;
+    my $self    = shift;
+    my $fh      = shift;
+    my $refresh = shift // 0;
+
+    my $zip64 = $self->zip64();
+    my $hasDataDescriptor = $self->hasDataDescriptor();
+
+    my $versionNeededToExtract;
+    my $crc32;
+    my $compressedSize;
+    my $uncompressedSize;
+    my $localExtraField = $self->localExtraField();
+
+    if (! $zip64) {
+        $versionNeededToExtract = 20;
+
+        if ($refresh) {
+            $crc32            = $self->crc32();
+            $compressedSize   = $self->_writeOffset();
+            $uncompressedSize = $self->uncompressedSize();
+
+            # Handle a brain-dead corner case gracefully.
+            # Otherwise we a) would always need to write zip64
+            # format or b) re-write the complete member data on
+            # refresh (which might not always be possible).
+            if ($compressedSize > 0xffffffff) {
+                return _formatError('compressed size too large for refresh');
+            }
+        }
+        elsif ($hasDataDescriptor) {
+            $crc32            = 0;
+            $compressedSize   = 0;
+            $uncompressedSize = 0;
+        }
+        else {
+            $crc32            = $self->crc32();
+            $compressedSize   = $self->_writeOffset();
+            $uncompressedSize = $self->uncompressedSize();
+        }
+    }
+    else {
+        $versionNeededToExtract = 45;
+
+        my $zip64CompressedSize;
+        my $zip64UncompressedSize;
+        if ($refresh) {
+            $crc32                 = $self->crc32();
+            $compressedSize        = 0xffffffff;
+            $uncompressedSize      = 0xffffffff;
+            $zip64CompressedSize   = $self->_writeOffset();
+            $zip64UncompressedSize = $self->uncompressedSize();
+        }
+        elsif ($hasDataDescriptor) {
+            $crc32                 = 0;
+            $compressedSize        = 0xffffffff;
+            $uncompressedSize      = 0xffffffff;
+            $zip64CompressedSize   = 0;
+            $zip64UncompressedSize = 0;
+        }
+        else {
+            $crc32                 = $self->crc32();
+            $compressedSize        = 0xffffffff;
+            $uncompressedSize      = 0xffffffff;
+            $zip64CompressedSize   = $self->_writeOffset();
+            $zip64UncompressedSize = $self->uncompressedSize();
+        }
+
+        $localExtraField .= pack('S< S< Q< Q<',
+                                 0x0001, 16,
+                                 $zip64UncompressedSize, 
+                                 $zip64CompressedSize);
+    }
+
+    my $fileNameLength    = length($self->fileNameAsBytes());
+    my $localFieldLength  = length($localExtraField);
 
     my $signatureData = pack(SIGNATURE_FORMAT, LOCAL_FILE_HEADER_SIGNATURE);
     $self->_print($fh, $signatureData)
       or return _ioError("writing local header signature");
 
-    my $header = $self->head(1);
-
-    $self->_print($fh, $header) or return _ioError("writing local header");
-
-    # Check for a valid filename or a filename equal to a literal `0'
-    if ($self->fileName() || $self->fileName eq '0') {
-        $self->_print($fh, $self->fileName())
-          or return _ioError("writing local header filename");
-    }
-    if ($self->localExtraField()) {
-        $self->_print($fh, $self->localExtraField())
-          or return _ioError("writing local extra field");
-    }
-
-    return AZ_OK;
-}
-
-sub _writeCentralDirectoryFileHeader {
-    my $self = shift;
-    my $fh   = shift;
-
-    my $sigData =
-      pack(SIGNATURE_FORMAT, CENTRAL_DIRECTORY_FILE_HEADER_SIGNATURE);
-    $self->_print($fh, $sigData)
-      or return _ioError("writing central directory header signature");
-
-    my ($fileNameLength, $extraFieldLength, $fileCommentLength);
-    {
-        use bytes;
-        $fileNameLength    = length($self->fileName());
-        $extraFieldLength  = length($self->cdExtraField());
-        $fileCommentLength = length($self->fileComment());
-    }
-
-    my $header = pack(
-        CENTRAL_DIRECTORY_FILE_HEADER_FORMAT,
-        $self->versionMadeBy(),
-        $self->fileAttributeFormat(),
-        $self->versionNeededToExtract(),
-        $self->bitFlag(),
-        $self->desiredCompressionMethod(),
-        $self->lastModFileDateTime(),
-        $self->crc32(),            # these three fields should have been updated
-        $self->_writeOffset(),     # by writing the data stream out
-        $self->uncompressedSize(), #
-        $fileNameLength,
-        $extraFieldLength,
-        $fileCommentLength,
-        0,                         # {'diskNumberStart'},
-        $self->internalFileAttributes(),
-        $self->externalFileAttributes(),
-        $self->writeLocalHeaderRelativeOffset());
-
+    my $header =
+      pack(LOCAL_FILE_HEADER_FORMAT,
+           $versionNeededToExtract,
+           $self->{'bitFlag'},
+           $self->desiredCompressionMethod(),
+           $self->lastModFileDateTime(), 
+           $crc32,
+           $compressedSize,
+           $uncompressedSize,
+           $fileNameLength,
+           $localFieldLength);
     $self->_print($fh, $header)
-      or return _ioError("writing central directory header");
-    if ($fileNameLength) {
-        $self->_print($fh, $self->fileName())
-          or return _ioError("writing central directory header signature");
-    }
-    if ($extraFieldLength) {
-        $self->_print($fh, $self->cdExtraField())
-          or return _ioError("writing central directory extra field");
-    }
-    if ($fileCommentLength) {
-        $self->_print($fh, $self->fileComment())
-          or return _ioError("writing central directory file comment");
+      or return _ioError("writing local header");
+
+    # Write these only if required
+    if (! $refresh || $zip64) {
+        if ($fileNameLength) {
+            $self->_print($fh, $self->fileNameAsBytes())
+              or return _ioError("writing local header filename");
+        }
+        if ($localFieldLength) {
+            $self->_print($fh, $localExtraField)
+              or return _ioError("writing local extra field");
+        }
     }
 
-    return AZ_OK;
-}
-
-# This writes a data descriptor to the given file handle.
-# Assumes that crc32, writeOffset, and uncompressedSize are
-# set correctly (they should be after a write).
-# Further, the local file header should have the
-# GPBF_HAS_DATA_DESCRIPTOR_MASK bit set.
-sub _writeDataDescriptor {
-    my $self   = shift;
-    my $fh     = shift;
-    my $header = pack(
-        SIGNATURE_FORMAT . DATA_DESCRIPTOR_FORMAT,
-        DATA_DESCRIPTOR_SIGNATURE,
-        $self->crc32(),
-        $self->_writeOffset(),    # compressed size
-        $self->uncompressedSize());
-
-    $self->_print($fh, $header)
-      or return _ioError("writing data descriptor");
-    return AZ_OK;
+    return
+      (AZ_OK,
+       LOCAL_FILE_HEADER_LENGTH +
+       SIGNATURE_LENGTH +
+       $fileNameLength +
+       $localFieldLength);
 }
 
 # Re-writes the local file header with new crc32 and compressedSize fields.
@@ -799,18 +927,173 @@ sub _refreshLocalFileHeader {
     my $fh   = shift;
 
     my $here = $fh->tell();
-    $fh->seek($self->writeLocalHeaderRelativeOffset() + SIGNATURE_LENGTH,
-        IO::Seekable::SEEK_SET)
+    $fh->seek($self->writeLocalHeaderRelativeOffset(), IO::Seekable::SEEK_SET)
       or return _ioError("seeking to rewrite local header");
 
-    my $header = $self->head(1);
+    my ($status, undef) = $self->_writeLocalFileHeader($fh, 1);
+    return $status if $status != AZ_OK;
 
-    $self->_print($fh, $header)
-      or return _ioError("re-writing local header");
     $fh->seek($here, IO::Seekable::SEEK_SET)
       or return _ioError("seeking after rewrite of local header");
 
     return AZ_OK;
+}
+
+# Write central directory file header.
+# Returns a pair (AZ_OK, $headerSize) on success.
+sub _writeCentralDirectoryFileHeader {
+    my $self   = shift;
+    my $fh     = shift;
+    my $adz64m = shift;         # $archiveDesiredZip64Mode
+
+    # (Re-)Determine whether to write zip64 format.  Assume
+    # {'diskNumberStart'} is always zero.
+    my $zip64 = $adz64m == ZIP64_HEADERS
+             || $self->desiredZip64Mode() == ZIP64_HEADERS
+             || $self->_writeOffset() > 0xffffffff
+             || $self->uncompressedSize() > 0xffffffff
+             || $self->writeLocalHeaderRelativeOffset() > 0xffffffff;
+
+    $self->{'zip64'} ||= $zip64;
+
+    my $versionMadeBy;
+    my $versionNeededToExtract;
+    my $compressedSize            = $self->_writeOffset();
+    my $uncompressedSize          = $self->uncompressedSize();
+    my $localHeaderRelativeOffset = $self->writeLocalHeaderRelativeOffset();
+    my $cdExtraField              = $self->cdExtraField();
+
+    if (! $zip64) {
+        $versionMadeBy             = 20;
+        $versionNeededToExtract    = 20;
+    }
+    else {
+        $versionMadeBy             = 45;
+        $versionNeededToExtract    = 45;
+
+        my $extraFieldFormat = '';
+        my @extraFieldValues = ();
+        my $extraFieldSize   = 0;
+        if ($uncompressedSize > 0xffffffff) {
+            $extraFieldFormat .= 'Q< ';
+            push(@extraFieldValues, $uncompressedSize);
+            $extraFieldSize += 8;
+            $uncompressedSize = 0xffffffff;
+        }
+        if ($compressedSize > 0xffffffff) {
+            $extraFieldFormat .= 'Q< ';
+            push(@extraFieldValues, $compressedSize);
+            $extraFieldSize += 8;
+            $compressedSize = 0xffffffff;
+        }
+        # Avoid empty zip64 extended information extra fields
+        if (   $localHeaderRelativeOffset > 0xffffffff
+            || @extraFieldValues == 0) {
+            $extraFieldFormat .= 'Q< ';
+            push(@extraFieldValues, $localHeaderRelativeOffset);
+            $extraFieldSize += 8;
+            $localHeaderRelativeOffset = 0xffffffff;
+        }
+
+        $cdExtraField .=
+          pack("S< S< $extraFieldFormat",
+               0x0001, $extraFieldSize,
+               @extraFieldValues);
+    }
+
+    my $fileNameLength    = length($self->fileNameAsBytes());
+    my $extraFieldLength  = length($cdExtraField);
+    my $fileCommentLength = length($self->fileComment());
+
+    my $sigData =
+      pack(SIGNATURE_FORMAT, CENTRAL_DIRECTORY_FILE_HEADER_SIGNATURE);
+    $self->_print($fh, $sigData)
+      or return _ioError("writing central directory header signature");
+
+    my $header = pack(
+        CENTRAL_DIRECTORY_FILE_HEADER_FORMAT,
+        $versionMadeBy,
+        $self->fileAttributeFormat(),
+        $versionNeededToExtract,
+        $self->bitFlag(),
+        $self->desiredCompressionMethod(),
+        $self->lastModFileDateTime(),
+        $self->crc32(),            # these three fields should have been updated
+        $compressedSize,           # by writing the data stream out
+        $uncompressedSize,         #
+        $fileNameLength,
+        $extraFieldLength,
+        $fileCommentLength,
+        0,                         # {'diskNumberStart'},
+        $self->internalFileAttributes(),
+        $self->externalFileAttributes(),
+        $localHeaderRelativeOffset);
+
+    $self->_print($fh, $header)
+      or return _ioError("writing central directory header");
+
+    if ($fileNameLength) {
+        $self->_print($fh, $self->fileNameAsBytes())
+          or return _ioError("writing central directory header signature");
+    }
+    if ($extraFieldLength) {
+        $self->_print($fh, $cdExtraField)
+          or return _ioError("writing central directory extra field");
+    }
+    if ($fileCommentLength) {
+        $self->_print($fh, $self->fileComment())
+          or return _ioError("writing central directory file comment");
+    }
+
+    # Update object members with information which might have
+    # changed while writing this member.  We already did the
+    # zip64 flag.  We must not update the extra fields with any
+    # zip64 information, since we consider that internal.
+    $self->{'versionMadeBy'}          = $versionMadeBy;
+    $self->{'versionNeededToExtract'} = $versionNeededToExtract;
+    $self->{'compressedSize'}         = $self->_writeOffset();
+
+    return
+      (AZ_OK,
+       CENTRAL_DIRECTORY_FILE_HEADER_LENGTH +
+       SIGNATURE_LENGTH + 
+       $fileNameLength +
+       $extraFieldLength +
+       $fileCommentLength)
+}
+
+# This writes a data descriptor to the given file handle.
+# Assumes that crc32, writeOffset, and uncompressedSize are
+# set correctly (they should be after a write).
+# Returns a pair (AZ_OK, $dataDescriptorSize) on success.
+# Further, the local file header should have the
+# GPBF_HAS_DATA_DESCRIPTOR_MASK bit set.
+sub _writeDataDescriptor {
+    my $self   = shift;
+    my $fh     = shift;
+
+    my $descriptor;
+    if (! $self->zip64()) {
+        $descriptor =
+          pack(SIGNATURE_FORMAT . DATA_DESCRIPTOR_FORMAT,
+               DATA_DESCRIPTOR_SIGNATURE,
+               $self->crc32(),
+               $self->_writeOffset(),   # compressed size
+               $self->uncompressedSize());
+    }
+    else {
+        $descriptor =
+          pack(SIGNATURE_FORMAT . DATA_DESCRIPTOR_ZIP64_FORMAT,
+               DATA_DESCRIPTOR_SIGNATURE,
+               $self->crc32(),
+               $self->_writeOffset(),   # compressed size
+               $self->uncompressedSize());
+    }
+
+    $self->_print($fh, $descriptor)
+      or return _ioError("writing data descriptor");
+
+    return (AZ_OK, length($descriptor));
 }
 
 sub readChunk {
@@ -984,16 +1267,27 @@ sub contents {
 
     if (defined($newContents)) {
 
-        # change our type and call the subclass contents method.
+        # Change our type and ensure that succeeded to avoid
+        # endless recursion
         $self->_become('Archive::Zip::StringMember');
-        return $self->contents(pack('C0a*', $newContents)); # in case of Unicode
+        $self->_ISA('Archive::Zip::StringMember') or
+          return
+            wantarray
+            ? (undef, $self->_error('becoming Archive::Zip::StringMember'))
+            : undef;
+
+        # Now call the subclass contents method
+        my $retval = 
+          $self->contents(pack('C0a*', $newContents)); # in case of Unicode
+
+        return wantarray ? ($retval, AZ_OK) : $retval;
     } else {
         my $oldCompression =
           $self->desiredCompressionMethod(COMPRESSION_STORED);
         my $status = $self->rewindData(@_);
         if ($status != AZ_OK) {
             $self->endRead();
-            return $status;
+            return wantarray ? (undef, $status) : undef;
         }
         my $retval = '';
         while ($status == AZ_OK) {
@@ -1017,28 +1311,32 @@ sub contents {
 
 sub extractToFileHandle {
     my $self = shift;
-    my $fh = (ref($_[0]) eq 'HASH') ? shift->{fileHandle} : shift;
-    _binmode($fh);
+    # This can be the link name when "extracting" symbolic links
+    my $fhOrName = (ref($_[0]) eq 'HASH') ? shift->{fileHandle} : shift;
+    _binmode($fhOrName) if ref($fhOrName);
     my $oldCompression = $self->desiredCompressionMethod(COMPRESSION_STORED);
     my $status         = $self->rewindData(@_);
-    $status = $self->_writeData($fh) if $status == AZ_OK;
+    $status = $self->_writeData($fhOrName) if $status == AZ_OK;
     $self->desiredCompressionMethod($oldCompression);
     $self->endRead();
     return $status;
 }
 
-# write local header and data stream to file handle
+# write local header and data stream to file handle.
+# Returns a pair ($status, $memberSize) if successful.
+# Stores the offset to the start of the header in my
+# writeLocalHeaderRelativeOffset member.
 sub _writeToFileHandle {
     my $self         = shift;
     my $fh           = shift;
     my $fhIsSeekable = shift;
     my $offset       = shift;
+    my $adz64m       = shift;   # $archiveDesiredZip64Mode
 
     return _error("no member name given for $self")
       if $self->fileName() eq '';
 
     $self->{'writeLocalHeaderRelativeOffset'} = $offset;
-    $self->{'wasWritten'}                     = 0;
 
     # Determine if I need to write a data descriptor
     # I need to do this if I can't refresh the header
@@ -1054,37 +1352,49 @@ sub _writeToFileHandle {
     $self->hasDataDescriptor(1)
       if ($shouldWriteDataDescriptor);
 
+    # Determine whether to write zip64 format
+    my $zip64 = $adz64m == ZIP64_HEADERS
+             || $self->desiredZip64Mode() == ZIP64_HEADERS
+             || $self->uncompressedSize() > 0xffffffff;
+
+    $self->{'zip64'} ||= $zip64;
+
     $self->{'writeOffset'} = 0;
 
     my $status = $self->rewindData();
-    ($status = $self->_writeLocalFileHeader($fh))
-      if $status == AZ_OK;
-    ($status = $self->_writeData($fh))
-      if $status == AZ_OK;
-    if ($status == AZ_OK) {
-        $self->{'wasWritten'} = 1;
-        if ($self->hasDataDescriptor()) {
-            $status = $self->_writeDataDescriptor($fh);
-        } elsif ($headerFieldsUnknown) {
-            $status = $self->_refreshLocalFileHeader($fh);
-        }
-    }
+    return $status if $status != AZ_OK;
 
-    return $status;
+    my $memberSize;
+    ($status, $memberSize) = $self->_writeLocalFileHeader($fh);
+    return $status if $status != AZ_OK;
+
+    $status = $self->_writeData($fh);
+    return $status if $status != AZ_OK;
+    $memberSize += $self->_writeOffset();
+
+    if ($self->hasDataDescriptor()) {
+        my $ddSize;
+        ($status, $ddSize) = $self->_writeDataDescriptor($fh);
+        $memberSize += $ddSize;
+    } elsif ($headerFieldsUnknown) {
+        $status = $self->_refreshLocalFileHeader($fh);
+    }
+    return $status if $status != AZ_OK;
+
+    return ($status, $memberSize);
 }
 
 # Copy my (possibly compressed) data to given file handle.
 # Returns C<AZ_OK> on success
 sub _writeData {
-    my $self    = shift;
-    my $writeFh = shift;
+    my $self     = shift;
+    my $fhOrName = shift;
 
-# If symbolic link, just create one if the operating system is Linux, Unix, BSD or VMS
-# TODO: Add checks for other operating systems
-    if ($self->{'isSymbolicLink'} == 1 && $^O eq 'linux') {
+    if ($self->isSymbolicLink() && OS_SUPPORTS_SYMLINK) {
         my $chunkSize = $Archive::Zip::ChunkSize;
         my ($outRef, $status) = $self->readChunk($chunkSize);
-        symlink $$outRef, $self->{'newName'};
+        symlink($$outRef, $fhOrName)
+          or return _ioError("creating symbolic link");
     } else {
         return AZ_OK if ($self->uncompressedSize() == 0);
         my $status;
@@ -1095,7 +1405,7 @@ sub _writeData {
             return $status if ($status != AZ_OK and $status != AZ_STREAM_END);
 
             if (length($$outRef) > 0) {
-                $self->_print($writeFh, $$outRef)
+                $self->_print($fhOrName, $$outRef)
                   or return _ioError("write error during copy");
             }
 

@@ -9,7 +9,7 @@ use vars qw( $VERSION $DEBUG @ISA @EXPORT_OK );
 @EXPORT_OK = qw( csv );
 
 BEGIN {
-    $VERSION = '1.99';
+    $VERSION = '2.00';
     $DEBUG   = 0;
 }
 
@@ -2673,7 +2673,7 @@ The escape character is not allowed as last character in an input stream.
 An escape character should escape only characters that need escaping.
 
 Allowing  the escape  for other characters  is possible  with the attribute
-L</allow_loose_escape>.
+L</allow_loose_escapes>.
 
 =item *
 2026 "EIQ - Binary character inside quoted field, binary off"

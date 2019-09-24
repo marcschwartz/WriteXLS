@@ -12,7 +12,7 @@ use Exporter ();
 use vars qw($VERSION @ISA @EXPORT_OK);
 use Carp;
 
-$VERSION = '1.99';
+$VERSION = '2.00';
 @ISA = qw(Exporter);
 @EXPORT_OK = qw(csv);
 
@@ -1679,7 +1679,7 @@ sub _setup_ctx {
     $ctx->{eolx} = $ctx->{eol_len}
         ? $ctx->{verbatim} || $ctx->{eol_len} >= 2
             ? 1
-            : $ctx->{eol} =~ /\A[\015|\012]/ ? 0 : 1
+            : $ctx->{eol} =~ /\A[\015\012]/ ? 0 : 1
         : 0;
 
     if ($ctx->{sep_len} and $ctx->{sep_len} > 1 and _is_valid_utf8($ctx->{sep})) {
@@ -1730,7 +1730,10 @@ sub _cache_set {
         $cache->{quo_len} = $len == 1 ? 0 : $len;
     }
     elsif ($key eq 'eol') {
-        $cache->{eol} = $value if defined($value);
+        if (defined($value)) {
+            $cache->{eol} = $value;
+            $cache->{eol_len} = length($value);
+        }
         $cache->{eol_is_cr} = $value eq "\015" ? 1 : 0;
     }
     elsif ($key eq 'undef_str') {
@@ -2040,8 +2043,10 @@ sub ___parse { # cx_c_xsParse
     if ($ctx->{strict}) {
         $ctx->{strict_n} ||= $ctx->{fld_idx};
         if ($ctx->{strict_n} != $ctx->{fld_idx}) {
-            $self->__parse_error($ctx, 2014, $ctx->{used});
-            return;
+            unless ($ctx->{useIO} & useIO_EOF) {
+                $self->__parse_error($ctx, 2014, $ctx->{used});
+            }
+            $result = undef;
         }
     }
 
@@ -5403,7 +5408,7 @@ The escape character is not allowed as last character in an input stream.
 An escape character should escape only characters that need escaping.
 
 Allowing  the escape  for other characters  is possible  with the attribute
-L</allow_loose_escape>.
+L</allow_loose_escapes>.
 
 =item *
 2026 "EIQ - Binary character inside quoted field, binary off"

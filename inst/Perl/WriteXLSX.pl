@@ -12,17 +12,19 @@
 # Public License Version 2, June 1991.  
 
 
-# Called as: WriteXLS.pl [--CSVpath] [--verbose] [--Encoding] [--AdjWidth] [--AutoFilter] [--BoldHeaderRow] ExcelFileName
+# Called as: WriteXLS.pl [--CSVpath] [--verbose] [--AdjWidth] [--AutoFilter] [--BoldHeaderRow] [-FreezeRow] [--FreezeCol] [--Encoding] [--AllText] ExcelFileName
 
 # CSVpath = Path to CSV Files. Defaults to '.'
 # verbose = Output status messages. TRUE or FALSE. Defaults to FALSE
-# adj.width = Adjust column widths based upon longest entry in each column. Defaults to FALSE
-# autofilter = Set autofilter for each sheet. Defaults to FALSE
-# bold.header.row = Set bold font for header row. Defaults to FALSE
+# Adj.Width = Adjust column widths based upon longest entry in each column. Defaults to FALSE
+# AutoFilter = Set autofilter for each sheet. Defaults to FALSE
+# Bold.Header.Row = Set bold font for header row. Defaults to FALSE
+# FreezeRow = Set row to freeze for scrolling
+# FreezeCol = Set col to freeze for scrolling
 # Encoding = character encoding. Either "UTF-8" (default) or "latin1" (aka "iso-8859-1") or "cp1252" (Windows)
 
 # Excel::Writer:XLSX
-# http://search.cpan.org/~jmcnamara/Excel-Writer-XLSX/
+# https://github.com/jmcnamara/excel-writer-xlsx
 
 # Excel 2007 specifications and limitations
 # http://office.microsoft.com/en-us/excel-help/excel-specifications-and-limits-HP010073849.aspx
@@ -50,18 +52,20 @@ my $verbose = "FALSE";
 my $AdjWidth = "FALSE";
 my $AutoFilter = "FALSE";
 my $BoldHeaderRow = "FALSE";
-my $Encoding = "UTF-8";
 my $FreezeRow = 0;
 my $FreezeCol = 0;
+my $Encoding = "UTF-8";
+my $AllText = "FALSE";
 
 GetOptions ('CSVpath=s' => \$CSVPath, 
             'verbose=s' => \$verbose,
             'AdjWidth=s' => \$AdjWidth,
             'AutoFilter=s' => \$AutoFilter,
             'BoldHeaderRow=s' => \$BoldHeaderRow,
-            'Encoding=s' => \$Encoding,
             'FreezeRow=i' => \$FreezeRow,
-            'FreezeCol=i' => \$FreezeCol);
+            'FreezeCol=i' => \$FreezeCol,
+	    'Encoding=s' => \$Encoding,
+	    'AllText=s' => \$AllText);
 
 my $ExcelFileName = $ARGV[0];
 
@@ -133,7 +137,7 @@ chomp(@FileNames);
 # if AdjWidth, add a write handler to store the column string widths to enable 
 # adjustments
 # Based upon code from:
-# http://search.cpan.org/dist/Spreadsheet-WriteExcel/lib/Spreadsheet/WriteExcel/Examples.pm#Example:_autofit.pl
+# https://github.com/jmcnamara/spreadsheet-writeexcel/blob/master/examples/autofit.pl
 # Not using full code base, since we are not formatting using fancy fonts, etc. and it requires yet another external module
 # So this will be an approximation
 
@@ -180,7 +184,8 @@ sub store_string_widths {
     return if $token =~ /^=/;           # Ignore formula
 
     # Ignore numbers
-    return if $token =~ /^([+-]?)(?=\d|\.\d)\d*(\.\d*)?([Ee]([+-]?\d+))?$/;
+    # Comment so that numbers are included, to deal with leading/trailing zeros
+    # return if $token =~ /^([+-]?)(?=\d|\.\d)\d*(\.\d*)?([Ee]([+-]?\d+))?$/;
 
     # Ignore various internal and external hyperlinks. In a real scenario
     # you may wish to track the length of the optional strings used with
@@ -225,6 +230,31 @@ sub string_width {
 
 
 ###############################################################################
+# 
+# Use write_string(), rather than write() if $AllText is TRUE
+# or there are leading/trailing zeroes
+
+sub use_write_string {
+  
+  my $worksheet = shift;
+  my $token     = $_[2];
+
+  # use this all the time
+  if ($AllText eq "TRUE") {
+    return $worksheet->write_string( @_ );
+  # only for leading/trailing zeroes  
+  } elsif ($token =~ /^0[^\.]|0$/) {
+    return $worksheet->write_string( @_ );
+  } else {
+    # Return control to write();
+    return undef;
+  }
+}
+
+
+
+
+###############################################################################
 #
 # Write out each worksheet to file
 #
@@ -255,7 +285,8 @@ foreach my $FileName (@FileNames) {
 
   # enable sheetwide retention of leading zeros
   # to handle entries such as numeric-like codes
-  $WorkSheet->keep_leading_zeros();
+  # supercede with use_write_string above
+  # $WorkSheet->keep_leading_zeros();
 
   # adjust column widths?
   # add a write handler to store the column string widths
@@ -264,6 +295,12 @@ foreach my $FileName (@FileNames) {
   if ($AdjWidth eq "TRUE") {
     $WorkSheet->add_write_handler(qr[\w], \&store_string_widths); 
   }
+  
+  # if AllText, add a write handler to force writing all
+  # content using write_string() instead of write()
+  #if ($AllText eq "TRUE") {
+  $WorkSheet->add_write_handler(qr[\w], \&use_write_string); 
+  #}
 
   # Rows and columns are zero indexed
   $Row = 0;
@@ -302,13 +339,13 @@ foreach my $FileName (@FileNames) {
 
       if ($CommentRow != 1) {
         foreach my $Fld (@Fields) {
-          $WorkSheet->write($Row, $Column, $Fld);
+	  $WorkSheet->write($Row, $Column, $Fld);
 
-        $Column++;
+          $Column++;
+        }
+
+        $Row++;
       }
-
-      $Row++;
-    }
       
       $CommentRow = 0;
     }

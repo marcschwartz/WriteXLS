@@ -4,7 +4,7 @@ use strict;
 use vars qw( $VERSION @ISA );
 
 BEGIN {
-    $VERSION = '1.48';
+    $VERSION = '1.66';
     @ISA     = qw ( Archive::Zip::FileMember );
 }
 
@@ -22,17 +22,19 @@ sub _newFromZipFile {
     my $class              = shift;
     my $fh                 = shift;
     my $externalFileName   = shift;
-    my $possibleEocdOffset = shift;    # normally 0
+    my $archiveZip64       = shift // 0;
+    my $possibleEocdOffset = shift // 0;     # normally 0
 
     my $self = $class->new(
-        'crc32'                     => 0,
+        'eocdCrc32'                 => 0,
         'diskNumberStart'           => 0,
         'localHeaderRelativeOffset' => 0,
-        'dataOffset' => 0,    # localHeaderRelativeOffset + header length
+        'dataOffset'                => 0,    # localHeaderRelativeOffset + header length
         @_
     );
     $self->{'externalFileName'}   = $externalFileName;
     $self->{'fh'}                 = $fh;
+    $self->{'archiveZip64'}       = $archiveZip64;
     $self->{'possibleEocdOffset'} = $possibleEocdOffset;
     return $self;
 }
@@ -67,7 +69,7 @@ sub _seekToLocalHeader {
 
     ($status, $signature) =
       _readSignature($self->fh(), $self->externalFileName(),
-        LOCAL_FILE_HEADER_SIGNATURE);
+                     LOCAL_FILE_HEADER_SIGNATURE, 1);
     return $status if $status == AZ_IO_ERROR;
 
     # retry with EOCD offset if any was given.
@@ -110,6 +112,8 @@ sub _become {
     delete($self->{'diskNumberStart'});
     delete($self->{'localHeaderRelativeOffset'});
     delete($self->{'dataOffset'});
+    delete($self->{'archiveZip64'});
+    delete($self->{'possibleEocdOffset'});
 
     return $self->SUPER::_become($newClass);
 }
@@ -155,11 +159,19 @@ sub _skipLocalFileHeader {
           or return _ioError("skipping local file name");
     }
 
+    my $zip64 = 0;
     if ($extraFieldLength) {
         $bytesRead =
           $self->fh()->read($self->{'localExtraField'}, $extraFieldLength);
         if ($bytesRead != $extraFieldLength) {
             return _ioError("reading local extra field");
+        }
+        if ($self->{'archiveZip64'}) {
+            my $status;
+            ($status, $zip64) =
+              $self->_extractZip64ExtraField($self->{'localExtraField'}, undef, undef);
+            return $status if $status != AZ_OK;
+            $self->{'zip64'} ||= $zip64;
         }
     }
 
@@ -180,13 +192,13 @@ sub _skipLocalFileHeader {
         my $oldCompressedSize   = $self->{'compressedSize'};
         my $oldUncompressedSize = $self->{'uncompressedSize'};
 
-        my $status = $self->_readDataDescriptor();
+        my $status = $self->_readDataDescriptor($zip64);
         return $status unless $status == AZ_OK;
 
-        # The buffer withe encrypted data is prefixed with a new
+        # The buffer with encrypted data is prefixed with a new
         # encrypted 12 byte header. The size only changes when
         # the buffer is also compressed
-        $self->isEncrypted && $oldUncompressedSize > $self->{uncompressedSize}
+        $self->isEncrypted && $oldUncompressedSize > $self->{'uncompressedSize'}
           and $oldUncompressedSize -= DATA_DESCRIPTOR_LENGTH;
 
         return _formatError(
@@ -201,7 +213,9 @@ sub _skipLocalFileHeader {
     return AZ_OK;
 }
 
-# Read from a local file header into myself. Returns AZ_OK if successful.
+# Read from a local file header into myself.  Returns AZ_OK (in
+# scalar context) or a pair (AZ_OK, $headerSize) (in list
+# context) if successful.
 # Assumes that fh is positioned after signature.
 # Note that crc32, compressedSize, and uncompressedSize will be 0 if
 # GPBF_HAS_DATA_DESCRIPTOR_MASK is set in the bitFlag.
@@ -235,11 +249,21 @@ sub _readLocalFileHeader {
         $self->fileName($fileName);
     }
 
+    my $zip64 = 0;
     if ($extraFieldLength) {
         $bytesRead =
           $self->fh()->read($self->{'localExtraField'}, $extraFieldLength);
         if ($bytesRead != $extraFieldLength) {
             return _ioError("reading local extra field");
+        }
+        if ($self->{'archiveZip64'}) {
+            my $status;
+            ($status, $zip64) =
+              $self->_extractZip64ExtraField($self->{'localExtraField'},
+                                             $uncompressedSize,
+                                             $compressedSize);
+            return $status if $status != AZ_OK;
+            $self->{'zip64'} ||= $zip64;
         }
     }
 
@@ -254,7 +278,7 @@ sub _readLocalFileHeader {
         $self->fh()->seek($self->{'compressedSize'}, IO::Seekable::SEEK_CUR)
           or return _ioError("seeking to extended local header");
 
-        my $status = $self->_readDataDescriptor();
+        my $status = $self->_readDataDescriptor($zip64);
         return $status unless $status == AZ_OK;
     } else {
         return _formatError(
@@ -263,7 +287,14 @@ sub _readLocalFileHeader {
             || $self->{'uncompressedSize'} != $uncompressedSize);
     }
 
-    return AZ_OK;
+    return
+      wantarray
+      ? (AZ_OK,
+         SIGNATURE_LENGTH,
+         LOCAL_FILE_HEADER_LENGTH +
+         $fileNameLength +
+         $extraFieldLength)
+      : AZ_OK;
 }
 
 # This will read the data descriptor, which is after the end of compressed file
@@ -272,7 +303,8 @@ sub _readLocalFileHeader {
 # Assumes that file is positioned immediately after the compressed data.
 # Returns status; sets crc32, compressedSize, and uncompressedSize.
 sub _readDataDescriptor {
-    my $self = shift;
+    my $self  = shift;
+    my $zip64 = shift;
     my $signatureData;
     my $header;
     my $crc32;
@@ -284,23 +316,40 @@ sub _readDataDescriptor {
       if $bytesRead != SIGNATURE_LENGTH;
     my $signature = unpack(SIGNATURE_FORMAT, $signatureData);
 
+    my $dataDescriptorLength;
+    my $dataDescriptorFormat;
+    my $dataDescriptorLengthNoSig;
+    my $dataDescriptorFormatNoSig;
+    if (! $zip64) {
+        $dataDescriptorLength      = DATA_DESCRIPTOR_LENGTH;
+        $dataDescriptorFormat      = DATA_DESCRIPTOR_FORMAT;
+        $dataDescriptorLengthNoSig = DATA_DESCRIPTOR_LENGTH_NO_SIG;
+        $dataDescriptorFormatNoSig = DATA_DESCRIPTOR_FORMAT_NO_SIG
+    }
+    else {
+        $dataDescriptorLength      = DATA_DESCRIPTOR_ZIP64_LENGTH;
+        $dataDescriptorFormat      = DATA_DESCRIPTOR_ZIP64_FORMAT;
+        $dataDescriptorLengthNoSig = DATA_DESCRIPTOR_ZIP64_LENGTH_NO_SIG;
+        $dataDescriptorFormatNoSig = DATA_DESCRIPTOR_ZIP64_FORMAT_NO_SIG
+    }
+
     # unfortunately, the signature appears to be optional.
     if ($signature == DATA_DESCRIPTOR_SIGNATURE
         && ($signature != $self->{'crc32'})) {
-        $bytesRead = $self->fh()->read($header, DATA_DESCRIPTOR_LENGTH);
+        $bytesRead = $self->fh()->read($header, $dataDescriptorLength);
         return _ioError("reading data descriptor")
-          if $bytesRead != DATA_DESCRIPTOR_LENGTH;
+          if $bytesRead != $dataDescriptorLength;
 
         ($crc32, $compressedSize, $uncompressedSize) =
-          unpack(DATA_DESCRIPTOR_FORMAT, $header);
+          unpack($dataDescriptorFormat, $header);
     } else {
-        $bytesRead = $self->fh()->read($header, DATA_DESCRIPTOR_LENGTH_NO_SIG);
+        $bytesRead = $self->fh()->read($header, $dataDescriptorLengthNoSig);
         return _ioError("reading data descriptor")
-          if $bytesRead != DATA_DESCRIPTOR_LENGTH_NO_SIG;
+          if $bytesRead != $dataDescriptorLengthNoSig;
 
         $crc32 = $signature;
         ($compressedSize, $uncompressedSize) =
-          unpack(DATA_DESCRIPTOR_FORMAT_NO_SIG, $header);
+          unpack($dataDescriptorFormatNoSig, $header);
     }
 
     $self->{'eocdCrc32'} = $self->{'crc32'}
@@ -355,6 +404,16 @@ sub _readCentralDirectoryFileHeader {
         $bytesRead = $fh->read($self->{'cdExtraField'}, $extraFieldLength);
         if ($bytesRead != $extraFieldLength) {
             return _ioError("reading central dir extra field");
+        }
+        if ($self->{'archiveZip64'}) {
+            my ($status, $zip64) =
+              $self->_extractZip64ExtraField($self->{'cdExtraField'},
+                                             $self->{'uncompressedSize'},
+                                             $self->{'compressedSize'},
+                                             $self->{'localHeaderRelativeOffset'},
+                                             $self->{'diskNumberStart'});
+            return $status if $status != AZ_OK;
+            $self->{'zip64'} ||= $zip64;
         }
     }
     if ($fileCommentLength) {

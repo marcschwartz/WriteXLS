@@ -5,8 +5,9 @@
 \description{Writes one or more R data frames to an Excel 2003 or Excel
              2007 file}
 \usage{
-  WriteXLS(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl",
-           verbose = FALSE, Encoding = c("UTF-8", "latin1", "cp1252"),
+  WriteXLS(x, ExcelFileName = "R.xls", SheetNames = NULL,
+           perl = "perl", verbose = FALSE,
+           Encoding = c("UTF-8", "latin1", "cp1252"), AllText = FALSE,
            row.names = FALSE, col.names = TRUE,
            AdjWidth = FALSE, AutoFilter = FALSE, BoldHeaderRow = FALSE,
            na = "",
@@ -37,6 +38,8 @@
         of the Excel file. Default is FALSE.}
   \item{Encoding}{Define the character encoding to be used for the
         exported data frames. Defaults to \code{UTF-8}.}
+  \item{AllText}{If \code{TRUE}, all cell contents of the Excel file will
+        be written as text. Default is FALSE. See Details.}
   \item{row.names}{If \code{TRUE}, the row names of the data frames are
     included in the Excel file worksheets.}
   \item{col.names}{If \code{TRUE}, the column names of the data frames are
@@ -175,6 +178,21 @@
   the worksheet for each column with this attribute. These can serve to
   provide descriptive information for each column. This will work for
   both the Excel 2003 and 2007 file formats.
+
+  As of version 5.1.0, any newline ('\\n') or carriage return ('\\r') characters
+  found embedded in the source data frames, will be replaced by a space character (' '). This
+  is to prevent the corruption of the intermediate CSV files, which can then corrupt
+  the resultant Excel file resulting in missing data.
+
+  If \code{AllText} is \code{TRUE}, all cell contents, including numeric values, will be written
+  to the Excel file as text, and will be left-justified. There may be content in the source data frame(s),
+  that contain leading and/or trailing zeros, which may otherwise be stripped, which is the default
+  Excel behavior. There is a per worksheet setting that is used in \code{WriteXLS} by default, to attempt
+  to preserve leading zeros. However, this may not produce consistent results in some cases. Thus, this
+  option is provided to fully override the default behavior in Excel. Note that if you open the Excel
+  file after creation, you may note little colored triangles in the upper left hand corner of the
+  relevant cells, indicating that a number is stored as text. This is expected and if you manually edit
+  the cell content, it may revert to a number, losing any leading or trailing zeros.
   
   Note that arguments \code{AdjWidth}, \code{AutoFilter},
   \code{BoldHeaderRow}, \code{FreezeRow} and \code{FreezeCol} will apply
