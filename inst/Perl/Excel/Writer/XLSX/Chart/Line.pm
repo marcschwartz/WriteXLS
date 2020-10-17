@@ -8,7 +8,7 @@ package Excel::Writer::XLSX::Chart::Line;
 #
 # See formatting note in Excel::Writer::XLSX::Chart.
 #
-# Copyright 2000-2019, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2020, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -22,7 +22,7 @@ use Carp;
 use Excel::Writer::XLSX::Chart;
 
 our @ISA     = qw(Excel::Writer::XLSX::Chart);
-our $VERSION = '1.00';
+our $VERSION = '1.07';
 
 
 ###############################################################################
@@ -35,8 +35,16 @@ sub new {
     my $class = shift;
     my $self  = Excel::Writer::XLSX::Chart->new( @_ );
 
+    $self->{_subtype}       = $self->{_subtype} || 'standard';
     $self->{_default_marker} = { type => 'none' };
     $self->{_smooth_allowed} = 1;
+
+    # Override and reset the default axis values.
+    if ( $self->{_subtype} eq 'percent_stacked' ) {
+        $self->{_y_axis}->{_defaults}->{num_format} = '0%';
+    }
+
+    $self->set_y_axis();
 
     # Set the available data label positions for this chart type.
     $self->{_label_position_default} = 'right';
@@ -92,10 +100,14 @@ sub _write_line_chart {
 
     return unless scalar @series;
 
+    my $subtype = $self->{_subtype};
+
+    $subtype = 'percentStacked' if $subtype eq 'percent_stacked';
+
     $self->xml_start_tag( 'c:lineChart' );
 
     # Write the c:grouping element.
-    $self->_write_grouping( 'standard' );
+    $self->_write_grouping( $subtype );
 
     # Write the series elements.
     $self->_write_series( $_ ) for @series;
@@ -219,9 +231,17 @@ Once the object is created it can be configured via the following methods that a
 
 These methods are explained in detail in L<Excel::Writer::XLSX::Chart>. Class specific methods or settings, if any, are explained below.
 
-=head1 Line Chart Methods
+=head1 Line Chart Subtypes
 
-There aren't currently any line chart specific methods. See the TODO section of L<Excel::Writer::XLSX::Chart>.
+
+The C<Line> chart module also supports the following sub-types:
+
+    stacked
+    percent_stacked
+
+These can be specified at creation time via the C<add_chart()> Worksheet method:
+
+    my $chart = $workbook->add_chart( type => 'line', subtype => 'stacked' );
 
 =head1 EXAMPLE
 
@@ -296,6 +316,6 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-Copyright MM-MMXIX, John McNamara.
+Copyright MM-MMXX, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.

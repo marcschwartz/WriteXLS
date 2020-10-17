@@ -14,7 +14,7 @@ use Encode qw(encode_utf8 decode_utf8);
 use vars qw( $VERSION @ISA );
 
 BEGIN {
-    $VERSION = '1.66';
+    $VERSION = '1.68';
     @ISA     = qw( Archive::Zip );
 }
 
@@ -35,7 +35,7 @@ sub new {
     # Info-Zip 3.0 (I guess) seems to use the following values
     # for the version fields in the zip64 EOCD record:
     #
-    #   version made by: 
+    #   version made by:
     #     30 (plus upper byte indicating host system)
     #
     #   version needed to extract:
@@ -269,7 +269,7 @@ sub addMember {
     my $self = shift;
     my $newMember = (ref($_[0]) eq 'HASH') ? shift->{member} : shift;
     push(@{$self->{'members'}}, $newMember) if $newMember;
-    if($newMember && ($newMember->{bitFlag} & 0x800) 
+    if($newMember && ($newMember->{bitFlag} & 0x800)
                   && !utf8::is_utf8($newMember->{fileName})){
         $newMember->{fileName} = Encode::decode_utf8($newMember->{fileName});
     }
@@ -304,7 +304,7 @@ sub addFile {
     } else {
         $self->addMember($newMember);
     }
-    
+
     return $newMember;
 }
 
@@ -353,7 +353,7 @@ sub addDirectory {
     } else {
         $self->addMember($newMember);
     }
-    
+
     return $newMember;
 }
 
@@ -491,7 +491,7 @@ sub writeToFileHandle {
         #
         #   $member->_writeToFileHandle
         #       Determines a local flag value depending on
-        #       necessity and user desire and ors it to 
+        #       necessity and user desire and ors it to
         #       the object member
         #     $member->_writeLocalFileHeader
         #         Queries the object member to write appropriate
@@ -595,8 +595,8 @@ sub _writeEndOfCentralDirectory {
     my ($self, $fh, $membersZip64) = @_;
 
     my $zip64                                 = 0;
-    my $versionMadeBy                         = 0;
-    my $versionNeededToExtract                = 0;
+    my $versionMadeBy                         = $self->versionMadeBy();
+    my $versionNeededToExtract                = $self->versionNeededToExtract();
     my $diskNumber                            = 0;
     my $diskNumberWithStartOfCentralDirectory = 0;
     my $numberOfCentralDirectoriesOnThisDisk  = $self->numberOfMembers();
@@ -616,9 +616,11 @@ sub _writeEndOfCentralDirectory {
     if (   $membersZip64
         || $eocdDataZip64
         || $self->desiredZip64Mode() == ZIP64_EOCD) {
+        return _zip64NotSupported() unless ZIP64_SUPPORTED;
+
         $zip64                  = 1;
-        $versionMadeBy          = 45;
-        $versionNeededToExtract = 45;
+        $versionMadeBy          = 45 if ($versionMadeBy == 0);
+        $versionNeededToExtract = 45 if ($versionNeededToExtract < 45);
 
         $self->_print($fh, ZIP64_END_OF_CENTRAL_DIRECTORY_RECORD_SIGNATURE_STRING)
           or return _ioError('writing zip64 EOCD record signature');
@@ -846,6 +848,12 @@ sub _readEndOfCentralDirectory {
     # reading the regular EOCD.
   NOZIP64:
     {
+        # Do not even start looking for any zip64 structures if
+        # that would not be supported.
+        if (! ZIP64_SUPPORTED) {
+            last NOZIP64;
+        }
+
         if ($eocdPosition < ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR_LENGTH + SIGNATURE_LENGTH) {
             last NOZIP64;
         }
@@ -935,7 +943,7 @@ sub _readEndOfCentralDirectory {
         # zip file comment!
         $fh->seek($eocdPosition, IO::Seekable::SEEK_SET)
           or return _ioError("seeking to EOCD");
-    }    
+    }
 
     # Skip past signature
     $fh->seek(SIGNATURE_LENGTH, IO::Seekable::SEEK_CUR)
@@ -958,6 +966,20 @@ sub _readEndOfCentralDirectory {
             $self->{'centralDirectoryOffsetWRTStartingDiskNumber'},
             $zipfileCommentLength
         ) = unpack(END_OF_CENTRAL_DIRECTORY_FORMAT, $header);
+
+        if (   $self->{'diskNumber'}                                  == 0xffff
+            || $self->{'diskNumberWithStartOfCentralDirectory'}       == 0xffff
+            || $self->{'numberOfCentralDirectoriesOnThisDisk'}        == 0xffff
+            || $self->{'numberOfCentralDirectories'}                  == 0xffff
+            || $self->{'centralDirectorySize'}                        == 0xffffffff
+            || $self->{'centralDirectoryOffsetWRTStartingDiskNumber'} == 0xffffffff) {
+            if (ZIP64_SUPPORTED) {
+                return _formatError("unexpected zip64 marker values in EOCD");
+            }
+            else {
+                return _zip64NotSupported();
+            }
+        }
     }
     else {
         (

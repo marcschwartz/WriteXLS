@@ -6,7 +6,7 @@ package Excel::Writer::XLSX::Package::Relationships;
 #
 # Used in conjunction with Excel::Writer::XLSX
 #
-# Copyright 2000-2019, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2020, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -20,7 +20,7 @@ use Carp;
 use Excel::Writer::XLSX::Package::XMLwriter;
 
 our @ISA     = qw(Excel::Writer::XLSX::Package::XMLwriter);
-our $VERSION = '1.00';
+our $VERSION = '1.07';
 
 our $schema_root     = 'http://schemas.openxmlformats.org';
 our $package_schema  = $schema_root . '/package/2006/relationships';
@@ -77,13 +77,14 @@ sub _assemble_xml_file {
 #
 sub _add_document_relationship {
 
-    my $self   = shift;
-    my $type   = shift;
-    my $target = shift;
+    my $self        = shift;
+    my $type        = shift;
+    my $target      = shift;
+    my $target_mode = shift;
 
     $type   = $document_schema . $type;
 
-    push @{ $self->{_rels} }, [ $type, $target ];
+    push @{ $self->{_rels} }, [ $type, $target, $target_mode ];
 }
 
 
@@ -232,7 +233,7 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-(c) MM-MMXIX, John McNamara.
+(c) MM-MMXX, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.
 

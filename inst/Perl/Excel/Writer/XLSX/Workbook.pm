@@ -7,7 +7,7 @@ package Excel::Writer::XLSX::Workbook;
 #
 # Used in conjunction with Excel::Writer::XLSX
 #
-# Copyright 2000-2019, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2020, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -23,6 +23,7 @@ use File::Find;
 use File::Temp qw(tempfile);
 use File::Basename 'fileparse';
 use Archive::Zip;
+use Digest::MD5 qw(md5_hex);
 use Excel::Writer::XLSX::Worksheet;
 use Excel::Writer::XLSX::Chartsheet;
 use Excel::Writer::XLSX::Format;
@@ -33,7 +34,7 @@ use Excel::Writer::XLSX::Package::XMLwriter;
 use Excel::Writer::XLSX::Utility qw(xl_cell_to_rowcol xl_rowcol_to_cell);
 
 our @ISA     = qw(Excel::Writer::XLSX::Package::XMLwriter);
-our $VERSION = '1.00';
+our $VERSION = '1.07';
 
 
 ###############################################################################
@@ -96,6 +97,8 @@ sub new {
     $self->{_window_height}      = 9660;
     $self->{_tab_ratio}          = 600;
     $self->{_excel2003_style}    = 0;
+    $self->{_max_url_length}     = 2079;
+    $self->{_has_comments}       = 0;
 
     $self->{_default_format_properties} = {};
 
@@ -118,6 +121,14 @@ sub new {
 
     if ( exists $options->{excel2003_style} ) {
         $self->{_excel2003_style} = 1;
+    }
+
+    if ( exists $options->{max_url_length} ) {
+        $self->{_max_url_length} = $options->{max_url_length};
+
+        if ($self->{_max_url_length} < 255) {
+            $self->{_max_url_length} = 2079;
+        }
     }
 
     # Structures for the shared strings data.
@@ -373,6 +384,7 @@ sub add_worksheet {
         $self->{_tempdir},
         $self->{_excel2003_style},
         $self->{_default_url_format},
+        $self->{_max_url_length},
     );
 
     my $worksheet = Excel::Writer::XLSX::Worksheet->new( @init_data );
@@ -508,6 +520,11 @@ sub _check_sheetname {
     # Check that sheetname doesn't contain any invalid characters
     if ( $name =~ $invalid_char ) {
         croak 'Invalid character []:*?/\\ in worksheet name: ' . $name;
+    }
+
+    # Check that sheetname doesn't start or end with an apostrophe.
+    if ( $name =~ /^'/ || $name =~ /'$/) {
+        croak "Worksheet name $name cannot start or end with an apostrophe";
     }
 
     # Check that the worksheet name doesn't already exist since this is a fatal
@@ -998,6 +1015,10 @@ sub add_vba_project {
     croak "Couldn't locate $vba_project in add_vba_project(): $!"
       unless -e $vba_project;
 
+    if ( !$self->{_vba_codemame} ) {
+        $self->{_vba_codename} = 'ThisWorkbook';
+    }
+
     $self->{_vba_project} = $vba_project;
 }
 
@@ -1090,6 +1111,15 @@ sub _store_workbook {
     # Set the active sheet.
     for my $sheet ( @{ $self->{_worksheets} } ) {
         $sheet->{_active} = 1 if $sheet->{_index} == $self->{_activesheet};
+    }
+
+    # Set the sheet vba_codename if the workbook has a vbaProject binary.
+    if ( $self->{_vba_project} ) {
+        for my $sheet ( @{ $self->{_worksheets} } ) {
+            if ( !$sheet->{_vba_codename} ) {
+                $sheet->set_vba_name();
+            }
+        }
     }
 
     # Convert the SST strings data structure.
@@ -1728,10 +1758,13 @@ sub _extract_named_ranges {
 #
 sub _prepare_drawings {
 
-    my $self         = shift;
-    my $chart_ref_id = 0;
-    my $image_ref_id = 0;
-    my $drawing_id   = 0;
+    my $self             = shift;
+    my $chart_ref_id     = 0;
+    my $image_ref_id     = 0;
+    my $drawing_id       = 0;
+    my $ref_id           = 0;
+    my %image_ids        = ();
+    my %header_image_ids = ();
 
     for my $sheet ( @{ $self->{_worksheets} } ) {
 
@@ -1760,27 +1793,33 @@ sub _prepare_drawings {
             $has_drawing = 1;
         }
 
-        # Prepare the worksheet charts.
-        for my $index ( 0 .. $chart_count - 1 ) {
-            $chart_ref_id++;
-            $sheet->_prepare_chart( $index, $chart_ref_id, $drawing_id );
-        }
-
         # Prepare the worksheet images.
         for my $index ( 0 .. $image_count - 1 ) {
 
             my $filename = $sheet->{_images}->[$index]->[2];
 
-            my ( $type, $width, $height, $name, $x_dpi, $y_dpi ) =
+            my ( $type, $width, $height, $name, $x_dpi, $y_dpi, $md5 ) =
               $self->_get_image_properties( $filename );
 
-            $image_ref_id++;
+            if ( exists $image_ids{$md5} ) {
+                $ref_id = $image_ids{$md5};
+            }
+            else {
+                $ref_id = ++$image_ref_id;
+                $image_ids{$md5} = $ref_id;
+                push @{ $self->{_images} }, [ $filename, $type ];
+            }
 
             $sheet->_prepare_image(
-                $index, $image_ref_id, $drawing_id,
-                $width, $height,       $name,
-                $type,  $x_dpi,        $y_dpi
+                $index, $ref_id, $drawing_id, $width, $height,
+                $name,  $type,   $x_dpi,      $y_dpi, $md5
             );
+        }
+
+        # Prepare the worksheet charts.
+        for my $index ( 0 .. $chart_count - 1 ) {
+            $chart_ref_id++;
+            $sheet->_prepare_chart( $index, $chart_ref_id, $drawing_id );
         }
 
         # Prepare the worksheet shapes.
@@ -1794,13 +1833,22 @@ sub _prepare_drawings {
             my $filename = $sheet->{_header_images}->[$index]->[0];
             my $position = $sheet->{_header_images}->[$index]->[1];
 
-            my ( $type, $width, $height, $name, $x_dpi, $y_dpi ) =
+            my ( $type, $width, $height, $name, $x_dpi, $y_dpi, $md5 ) =
               $self->_get_image_properties( $filename );
 
-            $image_ref_id++;
+            if ( exists $header_image_ids{$md5} ) {
+                $ref_id = $header_image_ids{$md5};
+            }
+            else {
+                $ref_id = ++$image_ref_id;
+                $header_image_ids{$md5} = $ref_id;
+                push @{ $self->{_images} }, [ $filename, $type ];
+            }
 
-            $sheet->_prepare_header_image( $image_ref_id, $width, $height,
-                $name, $type, $position, $x_dpi, $y_dpi );
+            $sheet->_prepare_header_image(
+                $ref_id,   $width, $height, $name, $type,
+                $position, $x_dpi, $y_dpi,  $md5
+            );
         }
 
         # Prepare the footer images.
@@ -1809,13 +1857,22 @@ sub _prepare_drawings {
             my $filename = $sheet->{_footer_images}->[$index]->[0];
             my $position = $sheet->{_footer_images}->[$index]->[1];
 
-            my ( $type, $width, $height, $name, $x_dpi, $y_dpi ) =
+            my ( $type, $width, $height, $name, $x_dpi, $y_dpi, $md5 ) =
               $self->_get_image_properties( $filename );
 
-            $image_ref_id++;
+            if ( exists $header_image_ids{$md5} ) {
+                $ref_id = $header_image_ids{$md5};
+            }
+            else {
+                $ref_id = ++$image_ref_id;
+                $header_image_ids{$md5} = $ref_id;
+                push @{ $self->{_images} }, [ $filename, $type ];
+            }
 
-            $sheet->_prepare_header_image( $image_ref_id, $width, $height,
-                $name, $type, $position, $x_dpi, $y_dpi );
+            $sheet->_prepare_header_image(
+                $ref_id,   $width, $height, $name, $type,
+                $position, $x_dpi, $y_dpi,  $md5
+            );
         }
 
 
@@ -1839,7 +1896,7 @@ sub _prepare_drawings {
     # written from the worksheets above.
     @chart_data = sort { $a->{_id} <=> $b->{_id} } @chart_data;
 
-    $self->{_charts} = \@chart_data;
+    $self->{_charts}        = \@chart_data;
     $self->{_drawing_count} = $drawing_id;
 }
 
@@ -1860,7 +1917,6 @@ sub _prepare_vml_objects {
     my $vml_shape_id   = 1024;
     my $vml_files      = 0;
     my $comment_files  = 0;
-    my $has_button     = 0;
 
     for my $sheet ( @{ $self->{_worksheets} } ) {
 
@@ -1870,8 +1926,12 @@ sub _prepare_vml_objects {
 
         if ( $sheet->{_has_vml} ) {
 
-            $comment_files++ if $sheet->{_has_comments};
-            $comment_id++    if $sheet->{_has_comments};
+            if ( $sheet->{_has_comments} ) {
+                $comment_files++;
+                $comment_id++;
+                $self->{_has_comments} = 1;
+            }
+
             $vml_drawing_id++;
 
             my $count =
@@ -1891,42 +1951,11 @@ sub _prepare_vml_objects {
                 $vml_drawing_id );
         }
 
-        # Set the sheet vba_codename if it has a button and the workbook
-        # has a vbaProject binary.
-        if ( $sheet->{_buttons_array} ) {
-            $has_button = 1;
-
-            if ( $self->{_vba_project} && !$sheet->{_vba_codename} ) {
-                $sheet->set_vba_name();
-            }
-        }
-
     }
 
     $self->{_num_vml_files}     = $vml_files;
     $self->{_num_comment_files} = $comment_files;
 
-    # Add a font format for cell comments.
-    if ( $comment_files > 0 ) {
-        my $format = Excel::Writer::XLSX::Format->new(
-            \$self->{_xf_format_indices},
-            \$self->{_dxf_format_indices},
-            font          => 'Tahoma',
-            size          => 8,
-            color_indexed => 81,
-            font_only     => 1,
-        );
-
-        $format->get_xf_index();
-
-        push @{ $self->{_formats} }, $format;
-    }
-
-    # Set the workbook vba_codename if one of the sheets has a button and
-    # the workbook has a vbaProject binary.
-    if ( $has_button && $self->{_vba_project} && !$self->{_vba_codename} ) {
-        $self->set_vba_name();
-    }
 }
 
 
@@ -2187,6 +2216,7 @@ sub _get_image_properties {
     # Slurp the file into a string and do some size calcs.
     my $data = do { local $/; <$fh> };
     my $size = length $data;
+    my $md5  = md5_hex($data);
 
 
     if ( unpack( 'x A3', $data ) eq 'PNG' ) {
@@ -2216,15 +2246,13 @@ sub _get_image_properties {
         croak "Unsupported image format for file: $filename\n";
     }
 
-    push @{ $self->{_images} }, [ $filename, $type ];
-
     # Set a default dpi for images with 0 dpi.
     $x_dpi = 96 if $x_dpi == 0;
     $y_dpi = 96 if $y_dpi == 0;
 
     $fh->close;
 
-    return ( $type, $width, $height, $image_name, $x_dpi, $y_dpi );
+    return ( $type, $width, $height, $image_name, $x_dpi, $y_dpi, $md5 );
 }
 
 
@@ -2798,6 +2826,6 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-(c) MM-MMXIX, John McNamara.
+(c) MM-MMXX, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.

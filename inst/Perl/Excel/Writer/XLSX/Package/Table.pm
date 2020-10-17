@@ -6,7 +6,7 @@ package Excel::Writer::XLSX::Package::Table;
 #
 # Used in conjunction with Excel::Writer::XLSX
 #
-# Copyright 2000-2019, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2020, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -20,7 +20,7 @@ use Carp;
 use Excel::Writer::XLSX::Package::XMLwriter;
 
 our @ISA     = qw(Excel::Writer::XLSX::Package::XMLwriter);
-our $VERSION = '1.00';
+our $VERSION = '1.07';
 
 
 ###############################################################################
@@ -253,19 +253,21 @@ sub _write_table_style_info {
     my $self  = shift;
     my $props = $self->{_properties};
 
+    my @attributes          = ();
     my $name                = $props->{_style};
     my $show_first_column   = $props->{_show_first_col};
     my $show_last_column    = $props->{_show_last_col};
     my $show_row_stripes    = $props->{_show_row_stripes};
     my $show_column_stripes = $props->{_show_col_stripes};
 
-    my @attributes = (
-        'name'              => $name,
-        'showFirstColumn'   => $show_first_column,
-        'showLastColumn'    => $show_last_column,
-        'showRowStripes'    => $show_row_stripes,
-        'showColumnStripes' => $show_column_stripes,
-    );
+    if ( $name && $name ne '' && $name ne 'None' ) {
+        push @attributes, ( 'name' => $name );
+    }
+
+    push @attributes, ( 'showFirstColumn'   => $show_first_column );
+    push @attributes, ( 'showLastColumn'    => $show_last_column );
+    push @attributes, ( 'showRowStripes'    => $show_row_stripes );
+    push @attributes, ( 'showColumnStripes' => $show_column_stripes );
 
     $self->xml_empty_tag( 'tableStyleInfo', @attributes );
 }
@@ -311,7 +313,7 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-(c) MM-MMXIX, John McNamara.
+(c) MM-MMXX, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.
 

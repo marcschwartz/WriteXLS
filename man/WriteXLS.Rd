@@ -145,14 +145,6 @@
   The data frame column names will be exported "as is" and will be the first 
   row in the corresponding worksheet, if \code{col.names = TRUE}.
 
-  As of version 4.1.0, the function will preserve numbers with leading
-  zeroes in the resultant Excel file, whereas prior to this, leading
-  zeroes would be stripped prior to writing the cell content. If the
-  column being written to the Excel file has a mix of numbers with and
-  without leading zeroes, those with leading zeroes will be left
-  justified in the column as text, while the others will be right
-  justified as numeric. 
-
   UTF-8 encoded content in the data frame should be properly exported by
   default. If you are operating in a 'latin1' based locale (also known
   as iso-8859-1) or a Windows CP-1252 locale, set \code{Encoding}
@@ -168,9 +160,9 @@
   exported to the same Excel file, if mixed character encodings are present,
   this may cause errors in the character representations in the Excel file.
   If you note errors from Perl regarding characters not mapping to Unicode,
-  try setting \code{Encoding} to 'latin1'. If mixed encodings are present,
-  you may want to explore the use of \code{iconv} to standardize the data
-  to a single encoding.
+  or illegal characters in UTF-8, try setting \code{Encoding} to 'latin1'.
+  If mixed encodings are present, you may want to explore the use of \code{iconv}
+  to standardize the data to a single encoding.
 
   If one or more of the data frame columns have been assigned a
   \emph{comment} attribute using the \code{comment} function, these will
@@ -179,24 +171,48 @@
   provide descriptive information for each column. This will work for
   both the Excel 2003 and 2007 file formats.
 
-  As of version 5.1.0, any newline ('\\n') or carriage return ('\\r') characters
-  found embedded in the source data frames, will be replaced by a space character (' '). This
-  is to prevent the corruption of the intermediate CSV files, which can then corrupt
-  the resultant Excel file resulting in missing data.
-
-  If \code{AllText} is \code{TRUE}, all cell contents, including numeric values, will be written
-  to the Excel file as text, and will be left-justified. There may be content in the source data frame(s),
-  that contain leading and/or trailing zeros, which may otherwise be stripped, which is the default
-  Excel behavior. There is a per worksheet setting that is used in \code{WriteXLS} by default, to attempt
-  to preserve leading zeros. However, this may not produce consistent results in some cases. Thus, this
-  option is provided to fully override the default behavior in Excel. Note that if you open the Excel
-  file after creation, you may note little colored triangles in the upper left hand corner of the
-  relevant cells, indicating that a number is stored as text. This is expected and if you manually edit
-  the cell content, it may revert to a number, losing any leading or trailing zeros.
+  Values containing leading and/or trailing zeroes in data frame content will
+  be treated, by default, as text, such that these zeroes will be preserved in the Excel
+  worksheet content, rather than being coerced to numeric values and being stripped, which is
+  the default Excel behavior. These values will be left-justified in the cells, rather than
+  being right-justified, and there may be a mix of justification in a single column, based
+  upon the data present. 
   
+  If \code{AllText = TRUE}, all data frame contents, including numeric values, will be
+  written to the Excel file as text, and will be left-justified. There may be content in
+  the source data frame(s), that contain leading and/or trailing zeros or other pre-formatted
+  content which would otherwise be modified by Excel, and which is the default Excel behavior.
+  Thus, this option is provided to fully override the default behavior in Excel. Note that if
+  you open the Excel file after creation, you may note little colored triangles in the upper
+  left hand corner of the relevant cells, indicating that a number is stored as text. This is
+  expected and if you manually edit the cell content, it may revert to a number, losing any desired
+  formatting.
+
+  If \code{verbose = TRUE}, messages will be output during key steps in the process of creating
+  the Excel file and intermediate steps. In the case of the Perl scripts parsing the intermediate CSV files,
+  CSV file line numbers will be output to hopefully assist in the debugging of possible content problems that may
+  compromise the integrity of the resultant Excel file. Note that the line numbers are 0 based, rather than 1 based,
+  and will include an additional line for the column names if \code{col.names = TRUE}. An additional line is
+  also included to be able to handle any \emph{comment} attributes, and you will observe a repeat of either line 0,
+  if \code{col.names = FALSE} or line 1, if \code{col.names = TRUE}, as a result. The actual source data frame
+  content will begin on the subsequent line.
+  
+  Note that as of version 6.0.0, more robust handling of embedded newline ('\\n') and carriage return ('\\r')
+  characters, double quotes, and two character sequences of a backslash character ('\\') followed by another character,
+  within a data frame value has been implemented. 
+  If there any issues parsing the lines in the CSV file, such that the number of fields in the current line is different
+  than the prior line, perhaps due to atypical character content, an error will be issued. If this occurs, you may wish
+  to set \code{verbose = TRUE} in order to obtain additional debugging information to help identify where in the CSV
+  file the error may be located. You may need to pre-process the data in the source data frame (e.g. using \code{gsub})
+  in order to resolve this issue. While this handling is now more robust, the user is strongly encouraged to verify the
+  content of the resultant Excel file to ensure that the integrity of the exported data frame(s) is maintained and that
+  all source data have been written correctly to the worksheet(s). The user is strongly encouraged to be aware of any
+  data frame content that includes escaped character sequences or other atypical content, and to consider pre-processing
+  these as may be apropos, prior to using this function.
+   
   Note that arguments \code{AdjWidth}, \code{AutoFilter},
-  \code{BoldHeaderRow}, \code{FreezeRow} and \code{FreezeCol} will apply
-  to ALL worksheets exported.
+  \code{BoldHeaderRow}, \code{FreezeRow}, \code{FreezeCol}, \code{Encoding}, 
+  \code{row.names}, \code{col.names} and \code{AllText} will apply to ALL worksheets exported.
 }
 \value{
   TRUE if the Excel file was successfully created.
@@ -227,15 +243,15 @@
   Many thanks to Prof. Brian Ripley for his assistance in the testing of this package. 
 }
 \references{
-  Spreadsheet::WriteExcel Perl Module \url{http://search.cpan.org/dist/Spreadsheet-WriteExcel}
+  Spreadsheet::WriteExcel Perl Module \url{https://metacpan.org/release//Spreadsheet-WriteExcel}
   
-  Excel::Writer::XLSX Perl Module \url{http://search.cpan.org/~jmcnamara/Excel-Writer-XLSX/}
+  Excel::Writer::XLSX Perl Module \url{https://metacpan.org/release/Excel-Writer-XLSX}
 
-  Excel 2007 Specifications and Limitations \url{http://office.microsoft.com/en-us/excel-help/excel-specifications-and-limits-HP010073849.aspx}
-  
+  Excel 2007 Specifications and Limitations \url{https://support.microsoft.com/en-us/office/excel-specifications-and-limits-1672b34d-7043-467e-8e27-269d656771c3}
+                                                 
   For Perl Unicode Issues
-  \url{http://www.ahinea.com/en/tech/perl-unicode-struggle.html} and/or
-  \url{http://www.perl.com/pub/2012/04/perlunicook-standard-preamble.html}
+  \url{https://www.ahinea.com/en/tech/perl-unicode-struggle.html} and/or
+  \url{https://www.perl.com/pub/2012/04/perlunicook-standard-preamble.html/}
 }
 \seealso{
   \code{\link[base]{writeLines}}, \code{\link[WriteXLS]{testPerl}}, \code{\link[base]{comment}} and \code{\link[base]{iconv}}
@@ -246,12 +262,12 @@
   {
     ## Examples using built-in data frames
     ## Create XLS (Excel 2003) files 
-    WriteXLS("iris", "iris.xls")
+    WriteXLS("iris", "iris.xlsx")
 
-    WriteXLS(c("iris", "infert", "esoph"), "Example.xls")
+    WriteXLS(c("iris", "infert", "esoph"), "Example.xlsx")
 
     iris.split <- split(iris, iris$Species)
-    WriteXLS("iris.split", "irissplit.xls")
+    WriteXLS("iris.split", "irissplit.xlsx")
 
     ## Example using comment()
     ## Commented cells with have a small red triangle in the
@@ -274,31 +290,61 @@
              AdjWidth = TRUE, BoldHeaderRow = TRUE, row.names = TRUE)
 
     ## Use latin1 Encoding
-    WriteXLS("iris", "irisLatin1.xls", Encoding = "latin1")
+    WriteXLS("iris", "irisLatin1.xlsx", Encoding = "latin1")
 
     ## Write a 0 row data frame
     ## Worksheet will contain header row only
     DF0 <- data.frame("A" = numeric(), "B" = numeric(), "C" = numeric())
-    WriteXLS("DF0", "DF0.xls", AdjWidth = TRUE, BoldHeaderRow = TRUE)
+    WriteXLS("DF0", "DF0.xlsx", AdjWidth = TRUE, BoldHeaderRow = TRUE)
 
     ## 'x' is a single data frame object
-    WriteXLS(iris, "irisDF.xls")
+    WriteXLS(iris, "irisDF.xlsx")
 
     ## 'x' is a list object containing data frames
-    WriteXLS(iris.split, "irisList.xls")
+    WriteXLS(iris.split, "irisList.xlsx")
 
-    ## Clean up and delete XLS files
+    ## Behavior with leading and/or trailing zeroes
+    DFL0 <- data.frame(A = c("01234", "12345", "01.2300", "123000"), 
+                       B = c("000-00-0000", "123-12-1234", "111-22-3300", "000-10-1230"), 
+                       C = c("0123.4", "1234.5", "0.1234", "1234.0"), 
+                       D = 1:4)
+    WriteXLS(DFL0, "DFL0.xlsx", AdjWidth = TRUE, BoldHeaderRow = TRUE)
+    WriteXLS(DFL0, "DFL0AT.xlsx", AdjWidth = TRUE, BoldHeaderRow = TRUE, AllText = TRUE)
+
+    ## Embedded newline, carriage return and a two character backslash sequence
+    DF.NL <- data.frame(RL = "This is normal text",
+                        LF = "This sample text \n has a LF",
+                        CR = "This sample text \r has a CR",
+                        CRLF = "This sample text \r\n has a CRLF",
+                        BSChar = "This sample text \\\\I has a character preceded by a backslash")
+    WriteXLS(DF.NL, "DFNL.xlsx", AdjWidth = TRUE, BoldHeaderRow = TRUE)
+
+    ## Embedded comma, single and double quotes
+    DF.Embed <- data.frame(A = "This is sample text, with a comma",
+                           B = "This is \"sample text\" with a double quote",
+                           C = "This is \'sample text\' with a single quote")
+    WriteXLS(DF.Embed, "DFEmbed.xlsx")
+    
+    
+    ## Clean up and delete XLSX files
     rm(iris.split)
     rm(DF0)
-    unlink("iris.xls")
-    unlink("Example.xls")
-    unlink("irissplit.xls")
+    rm(DFL0)
+    rm(DF.NL)
+    rm(DF.Embed)
+    unlink("iris.xlsx")
+    unlink("Example.xlsx")
+    unlink("irissplit.xlsx")
     unlink("iriscomments.xlsx")
     unlink("irisrownames.xlsx")
-    unlink("irisLatin1.xls")
-    unlink("DF0.xls")
-    unlink("irisDF.xls")
-    unlink("irisList.xls")
+    unlink("irisLatin1.xlsx")
+    unlink("DF0.xlsx")
+    unlink("irisDF.xlsx")
+    unlink("irisList.xlsx")
+    unlink("DFL0.xlsx")
+    unlink("DFL0AT.xlsx")
+    unlink("DFNL.xlsx")
+    unlink("DFEmbed.xlsx")
   }
 }
 \keyword{file}

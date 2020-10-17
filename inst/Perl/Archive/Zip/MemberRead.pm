@@ -40,7 +40,7 @@ use vars qw{$VERSION};
 my $nl;
 
 BEGIN {
-    $VERSION = '1.66';
+    $VERSION = '1.68';
     $VERSION = eval $VERSION;
 
 # Requirement for newline conversion. Should check for e.g., DOS and OS/2 as well, but am too lazy.
@@ -334,7 +334,7 @@ sub read {
 Sreeji K. Das E<lt>sreeji_k@yahoo.comE<gt>
 
 See L<Archive::Zip> by Ned Konz without which this module does not make
-any sense! 
+any sense!
 
 Minor mods by Ned Konz.
 

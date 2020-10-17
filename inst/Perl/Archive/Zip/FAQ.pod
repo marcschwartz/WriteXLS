@@ -139,14 +139,14 @@ B<Q:> Can I use Archive::Zip to extract Unix gzip files?
 
 B<A:> No.
 
-There is a distinction between Unix gzip files, and Zip archives that 
+There is a distinction between Unix gzip files, and Zip archives that
 also can use the gzip compression.
 
 Depending on the format of the gzip file, you can use L<Compress::Raw::Zlib>, or
 L<Archive::Tar> to decompress it (and de-archive it in the case of Tar files).
 
-You can unzip PKZIP/WinZip/etc/ archives using Archive::Zip (that's what 
-it's for) as long as any compressed members are compressed using 
+You can unzip PKZIP/WinZip/etc/ archives using Archive::Zip (that's what
+it's for) as long as any compressed members are compressed using
 Deflate compression.
 
 =head1 Add a directory/tree to a Zip
@@ -158,9 +158,9 @@ B<A:> You can use the Archive::Zip::addTree*() methods:
    use Archive::Zip;
    my $zip = Archive::Zip->new();
    # add all readable files and directories below . as xyz/*
-   $zip->addTree( '.', 'xyz' );	
+   $zip->addTree( '.', 'xyz' );
    # add all readable plain files below /abc as def/*
-   $zip->addTree( '/abc', 'def', sub { -f && -r } );	
+   $zip->addTree( '/abc', 'def', sub { -f && -r } );
    # add all .c files below /tmp as stuff/*
    $zip->addTreeMatching( '/tmp', 'stuff', '\.c$' );
    # add all .o files below /tmp as stuff/* if they aren't writable
@@ -257,18 +257,18 @@ and probably never will (unless I<you> write it).
 
 B<Q:> How can Archive::Zip can test the validity of a Zip file?
 
-B<A:> If you try to decompress the file, the gzip streams will report errors 
+B<A:> If you try to decompress the file, the gzip streams will report errors
 if you have garbage. Most of the time.
 
-If you try to open the file and a central directory structure can't be 
+If you try to open the file and a central directory structure can't be
 found, an error will be reported.
 
-When a file is being read, if we can't find a proper PK.. signature in 
+When a file is being read, if we can't find a proper PK.. signature in
 the right places we report a format error.
 
-If there is added garbage at the beginning of a Zip file (as inserted 
-by some viruses), you can find out about it, but Archive::Zip will ignore it, 
-and you can still use the archive. When it gets written back out the 
+If there is added garbage at the beginning of a Zip file (as inserted
+by some viruses), you can find out about it, but Archive::Zip will ignore it,
+and you can still use the archive. When it gets written back out the
 added stuff will be gone.
 
 There are two ready-to-use utilities in the examples directory that can

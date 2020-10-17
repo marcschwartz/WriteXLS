@@ -4,7 +4,7 @@ package Excel::Writer::XLSX;
 #
 # Excel::Writer::XLSX - Create a new file in the Excel 2007+ XLSX format.
 #
-# Copyright 2000-2019, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2020, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -17,7 +17,7 @@ use Exporter;
 use Excel::Writer::XLSX::Workbook;
 
 our @ISA     = qw(Excel::Writer::XLSX::Workbook Exporter);
-our $VERSION = '1.00';
+our $VERSION = '1.07';
 
 
 ###############################################################################
@@ -260,9 +260,23 @@ At least one worksheet should be added to a new workbook. A worksheet is used to
 
 If C<$sheetname> is not specified the default Excel convention will be followed, i.e. Sheet1, Sheet2, etc.
 
-The worksheet name must be a valid Excel worksheet name, i.e. it cannot contain any of the following characters, C<[ ] : * ? / \> and it must be less than 32 characters. In addition, you cannot use the same, case insensitive, C<$sheetname> for more than one worksheet.
+The worksheet name must be a valid Excel worksheet name, i.e:
 
+=over
 
+=item * It must be less than 32 characters.
+
+=item * It cannot contain any of the following characters: C<[ ] : * ? / \>
+
+=item * It cannot start or end with an apostrophe.
+
+=item * It cannot be the same as an existing worksheet name (or a case insensitive variant).
+
+=back
+
+Note, the sheetname should not be "History" (case insensitive) which is reserved in English language versions of Excel. Non-English versions may have restrictions on the equivalent word.
+
+See the Excel worksheet naming rules at L<https://support.office.com/en-ie/article/rename-a-worksheet-3f1f7148-ee83-404d-8ef0-9ff99fbad1f9>.
 
 
 =head2 add_format( %properties )
@@ -1301,7 +1315,8 @@ Finally, you can avoid most of these quoting problems by using forward slashes. 
 
 Note: Excel::Writer::XLSX will escape the following characters in URLs as required by Excel: C<< \s " < > \ [  ] ` ^ { } >> unless the URL already contains C<%xx> style escapes. In which case it is assumed that the URL was escaped correctly by the user and will by passed directly to Excel.
 
-Excel limits hyperlink links and anchor/locations to 255 characters each.
+Versions of Excel prior to Excel 2015 limited hyperlink links and anchor/locations to 255 characters each. Versions after that support urls up to 2079 characters. Excel::Writer::XLSX versions >= 1.0.2 support the new longer limit by default.
+
 
 See also, the note about L</Cell notation>.
 
@@ -1679,24 +1694,66 @@ See the C<write_handler 1-4> programs in the C<examples> directory for further e
 
 
 
-=head2 insert_image( $row, $col, $filename, $x, $y, $x_scale, $y_scale )
+=head2 insert_image( $row, $col, $filename, { %options } )
 
-This method can be used to insert a image into a worksheet. The image can be in PNG, JPEG or BMP format. The C<$x>, C<$y>, C<$x_scale> and C<$y_scale> parameters are optional.
+This method can be used to insert a image into a worksheet. The image can be in PNG, JPEG or BMP format.
 
     $worksheet1->insert_image( 'A1', 'perl.bmp' );
     $worksheet2->insert_image( 'A1', '../images/perl.bmp' );
     $worksheet3->insert_image( 'A1', '.c:\images\perl.bmp' );
 
-The parameters C<$x> and C<$y> can be used to specify an offset from the top left hand corner of the cell specified by C<$row> and C<$col>. The offset values are in pixels.
+The optional C<options> hash/hashref parameter can be used to set various options for the image. The defaults are:
 
-    $worksheet1->insert_image('A1', 'perl.bmp', 32, 10);
+    %options = (
+        x_offset        => 0,
+        y_offset        => 0,
+        x_scale         => 1,
+        y_scale         => 1,
+        object_position => 2,
+        url             => undef,
+        tip             => undef,
+    );
+
+The parameters C<x_offset> and C<y_offset> can be used to specify an offset from the top left hand corner of the cell specified by C<$row> and C<$col>. The offset values are in pixels.
+
+    $worksheet1->insert_image('A1', 'perl.bmp', { x_offset =>32, y_offset => 10 });
 
 The offsets can be greater than the width or height of the underlying cell. This can be occasionally useful if you wish to align two or more images relative to the same cell.
 
-The parameters C<$x_scale> and C<$y_scale> can be used to scale the inserted image horizontally and vertically:
+The parameters C<x_scale> and C<y_scale> can be used to scale the inserted image horizontally and vertically:
 
     # Scale the inserted image: width x 2.0, height x 0.8
-    $worksheet->insert_image( 'A1', 'perl.bmp', 0, 0, 2, 0.8 );
+    $worksheet->insert_image( 'A1', 'perl.bmp', { y_scale => 2, y_scale => 0.8 } );
+
+
+The positioning of the image when cells are resized can be set with the C<object_position> parameter:
+
+    $worksheet->insert_image( 'A1', 'perl.bmp', { object_position => 1 } );
+
+The C<object_position> parameter can have one of the following allowable values:
+
+    1. Move and size with cells.
+    2. Move but don't size with cells.
+    3. Don't move or size with cells.
+    4. Same as Option 1, see below.
+
+Option 4 appears in Excel as Option 1. However, the worksheet object is sized to take hidden rows or columns into account. This allows the user to hide an image in a cell, possibly as part of an autofilter.
+
+The C<url> option can be use to used to add a hyperlink to an image:
+
+    $worksheet->insert_image( 'A1', 'logo.png',
+        { url => 'https://github.com/jmcnamara' } );
+
+The supported url formats are the same as those supported by the C<write_url()> method and the same rules/limits apply.
+
+The C<tip> option can be use to used to add a mouseover tip to the hyperlink:
+
+    $worksheet->insert_image( 'A1', 'logo.png',
+        {
+            url => 'https://github.com/jmcnamara',
+            tip => 'GitHub'
+        }
+    );
 
 Note: you must call C<set_row()> or C<set_column()> before C<insert_image()> if you wish to change the default dimensions of any of the rows or columns that the image occupies. The height of a row can also change if you use a font that is larger than the default. This in turn will affect the scaling of your image. To avoid this you should explicitly set the height of the row using C<set_row()> if it contains a font size that will change the row height.
 
@@ -1705,7 +1762,7 @@ BMP images must be 24 bit, true colour, bitmaps. In general it is best to avoid 
 
 
 
-=head2 insert_chart( $row, $col, $chart, $x, $y, $x_scale, $y_scale )
+=head2 insert_chart( $row, $col, $chart, { %options } )
 
 This method can be used to insert a Chart object into a worksheet. The Chart must be created by the C<add_chart()> Workbook method and it must have the C<embedded> option set.
 
@@ -1719,16 +1776,38 @@ This method can be used to insert a Chart object into a worksheet. The Chart mus
 
 See C<add_chart()> for details on how to create the Chart object and L<Excel::Writer::XLSX::Chart> for details on how to configure it. See also the C<chart_*.pl> programs in the examples directory of the distro.
 
-The C<$x>, C<$y>, C<$x_scale> and C<$y_scale> parameters are optional.
+The optional C<options> hash/hashref parameter can be used to set various options for the chart. The defaults are:
 
-The parameters C<$x> and C<$y> can be used to specify an offset from the top left hand corner of the cell specified by C<$row> and C<$col>. The offset values are in pixels.
+    %options = (
+        x_offset        => 0,
+        y_offset        => 0,
+        x_scale         => 1,
+        y_scale         => 1,
+        object_position => 1,
+    );
 
-    $worksheet1->insert_chart( 'E2', $chart, 3, 3 );
+The parameters C<x_offset> and C<y_offset> can be used to specify an offset from the top left hand corner of the cell specified by C<$row> and C<$col>. The offset values are in pixels.
 
-The parameters C<$x_scale> and C<$y_scale> can be used to scale the inserted chart horizontally and vertically:
+    $worksheet1->insert_chart( 'E2', $chart, { x_offset =>10, y_offset => 20 });
+
+The parameters C<x_scale> and C<y_scale> can be used to scale the inserted chart horizontally and vertically:
 
     # Scale the width by 120% and the height by 150%
-    $worksheet->insert_chart( 'E2', $chart, 0, 0, 1.2, 1.5 );
+    $worksheet->insert_chart( 'E2', $chart, { y_scale => 1.2, y_scale => 1.5 } );
+
+The positioning of the chart when cells are resized can be set with the C<object_position> parameter:
+
+    $worksheet->insert_chart( 'E2', $chart, { object_position => 2 } );
+
+The C<object_position> parameter can have one of the following allowable values:
+
+    1. Move and size with cells.
+    2. Move but don't size with cells.
+    3. Don't move or size with cells.
+    4. Same as Option 1, see below.
+
+Option 4 appears in Excel as Option 1. However, the worksheet object is sized to take hidden rows or columns into account. This is generally only useful for images and not for charts.
+
 
 =head2 insert_shape( $row, $col, $shape, $x, $y, $x_scale, $y_scale )
 
@@ -1761,7 +1840,7 @@ See also the C<shape*.pl> programs in the examples directory of the distro.
 
 
 
-=head2 insert_button( $row, $col, { %properties })
+=head2 insert_button( $row, $col, { %options })
 
 The C<insert_button()> method can be used to insert an Excel form button into a worksheet.
 
@@ -3525,7 +3604,19 @@ For examples of these formatting codes see the 'Numerical formats' worksheet cre
 
 Note 1. Numeric formats 23 to 36 are not documented by Microsoft and may differ in international versions.
 
-Note 2. The dollar sign appears as the defined local currency symbol.
+Note 2. The built-in formats are localised according to the locale settings (regional settings on Windows) of the user when opening the file in Excel:
+
+=over
+
+=item * The dot appears as the defined local decimal separator.
+
+=item * The comma appears as the defined local digit groups separator.
+
+=item * The dollar sign appears as the defined local currency symbol.
+
+=item * The date, time and duration formats appear as the local equivalent date or time format.
+
+=back
 
 
 
@@ -3969,11 +4060,11 @@ See also the C<unicode_*.pl> programs in the examples directory of the distro.
 
 Throughout Excel::Writer::XLSX colours can be specified using a Html style C<#RRGGBB> value. For example with a Format object:
 
-    $format->set_font_color( '#FF0000' );
+    $format->set_color( '#FF0000' );
 
 For backward compatibility a limited number of color names are supported:
 
-    $format->set_font_color( 'red' );
+    $format->set_color( 'red' );
 
 The color names supported are:
 
@@ -6026,6 +6117,11 @@ The C<style> parameter can be used to set the style of the table. Standard Excel
 
 The default table style is 'Table Style Medium 9'.
 
+You can also turn the table style off by setting it to 'None':
+
+    $worksheet11->add_table( 'B3:F7', { style => 'None' } );
+
+
 
 =head2 name
 
@@ -6962,8 +7058,10 @@ different features and options of the module. See L<Excel::Writer::XLSX::Example
     chart_stock.pl          A demo of stock style charts.
     chart_data_table.pl     A demo of a chart with a data table on the axis.
     chart_data_tools.pl     A demo of charts with data highlighting options.
+    chart_data_labels.pl    A demo of standard and custom chart data labels.
     chart_clustered.pl      A demo of a chart with a clustered axis.
     chart_styles.pl         A demo of the available chart styles.
+    chart_gauge.pl          A demo of a gauge style chart.
     colors.pl               A demo of the colour palette and named colours.
     comments1.pl            Add comments to worksheet cells.
     comments2.pl            Add comments with advanced options.
@@ -6988,9 +7086,10 @@ different features and options of the module. See L<Excel::Writer::XLSX::Example
     merge6.pl               An example of merging with Unicode strings.
     mod_perl1.pl            A simple mod_perl 1 program.
     mod_perl2.pl            A simple mod_perl 2 program.
-    panes.pl                An examples of how to create panes.
     outline.pl              An example of outlines and grouping.
     outline_collapsed.pl    An example of collapsed outlines.
+    panes.pl                An example of how to create panes.
+    properties.pl           Add document properties to a workbook.
     protection.pl           Example of cell locking and formula hiding.
     rich_strings.pl         Example of strings with multiple formats.
     right_to_left.pl        Change default sheet direction to right to left.
@@ -7016,6 +7115,7 @@ different features and options of the module. See L<Excel::Writer::XLSX::Example
     write_handler4.pl       Example of extending the write() method. Step 4.
     write_to_scalar.pl      Example of writing an Excel file to a Perl scalar.
 
+
     Unicode
     =======
     unicode_2022_jp.pl      Japanese: ISO-2022-JP.
@@ -7031,24 +7131,24 @@ different features and options of the module. See L<Excel::Writer::XLSX::Example
 
 
 
-
 =head1 LIMITATIONS
 
 The following limits are imposed by Excel 2007+:
 
-    Description                             Limit
-    --------------------------------------  ------
-    Maximum number of chars in a string     32,767
-    Maximum number of columns               16,384
-    Maximum number of rows                  1,048,576
-    Maximum chars in a sheet name           31
-    Maximum chars in a header/footer        254
+    Description                                Limit
+    --------------------------------------     ------
+    Maximum number of chars in a string        32,767
+    Maximum number of columns                  16,384
+    Maximum number of rows                     1,048,576
+    Maximum chars in a sheet name              31
+    Maximum chars in a header/footer           254
 
-    Maximum characters in hyperlink url     255
-    Maximum characters in hyperlink anchor  255
-    Maximum number of unique hyperlinks*    65,530
+    Maximum characters in hyperlink url (1)    2079
+    Maximum number of unique hyperlinks (2)    65,530
 
-* Per worksheet. Excel allows a greater number of non-unique hyperlinks if they are contiguous and can be grouped into a single range. This will be supported in a later version of Excel::Writer::XLSX if possible.
+(1) Versions of Excel prior to Excel 2015 limited hyperlink links and anchor/locations to 255 characters each. Versions after that support urls up to 2079 characters. Excel::Writer::XLSX versions >= 1.0.2 support the new longer limit by default.
+
+(2) Per worksheet. Excel allows a greater number of non-unique hyperlinks if they are contiguous and can be grouped into a single range. This isn't supported by Excel::Writer::XLSX.
 
 
 
@@ -7351,9 +7451,21 @@ To read data from Excel files try:
 
 =over 4
 
+=item * L<Spreadsheet::ParseXLSX>
+
+A module for reading data from XLSX files. It also imports most, if
+not all, of the metadata to be found in Excel XLSX files.  As its
+author describes it: "This module is an adaptor for
+L<Spreadsheet::ParseExcel> that reads XLSX files. For documentation
+about the various data that you can retrieve from these classes,
+please see L<Spreadsheet::ParseExcel>,
+L<Spreadsheet::ParseExcel::Workbook>,
+L<Spreadsheet::ParseExcel::Worksheet>, and
+L<Spreadsheet::ParseExcel::Cell>."
+
 =item * Spreadsheet::XLSX
 
-A module for reading formatted or unformatted data form XLSX files.
+A module for reading formatted or unformatted data from XLSX files.
 
 L<Spreadsheet::XLSX>
 
@@ -7365,7 +7477,7 @@ L<SimpleXlsx>
 
 =item * Spreadsheet::ParseExcel
 
-This module can read  data from an Excel XLS file but it doesn't support the XLSX format.
+This module can read data from an Excel XLS file but it doesn't support the XLSX format.
 
 L<Spreadsheet::ParseExcel>
 
@@ -7485,7 +7597,7 @@ In no event unless required by applicable law or agreed to in writing will any c
 
 =head1 LICENSE
 
-Either the Perl Artistic Licence L<http://dev.perl.org/licenses/artistic.html> or the GPL L<http://www.opensource.org/licenses/gpl-license.php>.
+The Perl Artistic Licence L<http://dev.perl.org/licenses/artistic.html>.
 
 
 
@@ -7511,6 +7623,6 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-Copyright MM-MMXIX, John McNamara.
+Copyright MM-MMXX, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.

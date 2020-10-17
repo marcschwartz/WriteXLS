@@ -6,7 +6,7 @@
 #
 # Write to an Excel binary file.
 #
-# Copyright 2015-2019, Marc Schwartz <marc_schwartz@me.com>
+# Copyright 2015-2020, Marc Schwartz <marc_schwartz@me.com>
 #
 # This software is distributed under the terms of the GNU General
 # Public License Version 2, June 1991.  
@@ -242,11 +242,17 @@ sub use_write_string {
   # use this all the time
   if ($AllText eq "TRUE") {
     return $worksheet->write_string( @_ );
-  # only for leading/trailing zeroes  
+  # exception where trailing zeroes preceded
+  # by non-zero digits only, as an integer
+  # Return control to write();  
+  } elsif ($token =~ /^[1-9]+0+$/) {
+    return undef;
+  # for leading/trailing zeroes
+  # where the leading zero is not followed by a decimal  
   } elsif ($token =~ /^0[^\.]|0$/) {
     return $worksheet->write_string( @_ );
+  # else return control to write();  
   } else {
-    # Return control to write();
     return undef;
   }
 }
@@ -262,12 +268,12 @@ sub use_write_string {
 foreach my $FileName (@FileNames) {
 
   if ($verbose eq "TRUE") {
-    print "Reading: $FileName\n";
+    print "\n\nReading: $FileName\n";
   }
 
   # Open CSV File
-  my $csv = Text::CSV_PP->new ({ binary => 1, allow_loose_quotes => 1, escape_char => "\\"});
-  open (CSVFILE, $Encode, "$FileName") || die "ERROR: cannot open $FileName. $!\n";
+  my $csv = Text::CSV_PP->new ({ binary => 1, strict => 1});
+  open my $CSVFILE, $Encode, $FileName or die "ERROR: cannot open $FileName. $!\n";
 
   # Create new sheet with filename prefix
   # ($base, $dir, $ext) = fileparse ($FileName, '..*');
@@ -296,11 +302,9 @@ foreach my $FileName (@FileNames) {
     $WorkSheet->add_write_handler(qr[\w], \&store_string_widths); 
   }
   
-  # if AllText, add a write handler to force writing all
+  # Add a write handler to force writing selected
   # content using write_string() instead of write()
-  #if ($AllText eq "TRUE") {
   $WorkSheet->add_write_handler(qr[\w], \&use_write_string); 
-  #}
 
   # Rows and columns are zero indexed
   $Row = 0;
@@ -312,46 +316,51 @@ foreach my $FileName (@FileNames) {
 
   my $CommentRow = 0;
 
-  # Write to Sheet
-  while (<CSVFILE>) {
+  while (my $line = $csv->getline($CSVFILE)) {
 
-    if ($csv->parse($_)) {
-      my @Fields = $csv->fields();
-
-      $Column = 0;
-
-      # The row with comments will be 0 if the column names are not 
-      # output in the CSV file, 1 otherwise.
-      if ($Row <= 1) {
-        if (index($Fields[0], "WRITEXLS COMMENT: ") != -1) {
-          $CommentRow = 1;
-
-          foreach my $Fld (@Fields) {
-            $Fld = substr $Fld, 18;
-            if ($Fld ne "") {
-              $WorkSheet->write_comment(0, $Column, $Fld);
-            }
-
-            $Column++; 
-	  }
-	}
-      }
-
-      if ($CommentRow != 1) {
-        foreach my $Fld (@Fields) {
-	  $WorkSheet->write($Row, $Column, $Fld);
-
-          $Column++;
-        }
-
-        $Row++;
-      }
-      
-      $CommentRow = 0;
+    ## Enable the output of the CSV line number
+    ## if an error is triggered when parsing the line
+    ## Typically due to an inconsistent number of fields
+    if ($verbose eq "TRUE") {
+      print "Parsing CSV File Row: $Row\n";
     }
+
+    my @Fields = @$line;
+
+    $Column = 0;
+
+    # The row with comments will be 0 if the column names are not 
+    # output in the CSV file, 1 otherwise.
+    if ($Row <= 1) {
+      if (index($Fields[0], "WRITEXLS COMMENT: ") != -1) {
+        $CommentRow = 1;
+
+        foreach my $Fld (@Fields) {
+          $Fld = substr $Fld, 18;
+          if ($Fld ne "") {
+            $WorkSheet->write_comment(0, $Column, $Fld);
+          }
+
+          $Column++; 
+        }
+      }
+    }
+
+    if ($CommentRow != 1) {
+      foreach my $Fld (@Fields) {
+	$WorkSheet->write($Row, $Column, $Fld);
+
+        $Column++;
+      }
+
+      $Row++;
+    }
+      
+    $CommentRow = 0;
+     
   }
 
-  close CSVFILE;
+  close $CSVFILE;
 
   if ($AdjWidth eq "TRUE") {
     autofit_columns($WorkSheet);

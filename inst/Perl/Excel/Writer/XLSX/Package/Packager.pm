@@ -6,7 +6,7 @@ package Excel::Writer::XLSX::Package::Packager;
 #
 # Used in conjunction with Excel::Writer::XLSX
 #
-# Copyright 2000-2019, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2020, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -32,7 +32,7 @@ use Excel::Writer::XLSX::Package::Theme;
 use Excel::Writer::XLSX::Package::VML;
 
 our @ISA     = qw(Exporter);
-our $VERSION = '1.00';
+our $VERSION = '1.07';
 
 
 ###############################################################################
@@ -554,6 +554,7 @@ sub _write_styles_file {
     my $fill_count         = $self->{_workbook}->{_fill_count};
     my $custom_colors      = $self->{_workbook}->{_custom_colors};
     my $dxf_formats        = $self->{_workbook}->{_dxf_formats};
+    my $has_comments       = $self->{_workbook}->{_has_comments};
 
     my $rels = Excel::Writer::XLSX::Package::Styles->new();
 
@@ -568,6 +569,7 @@ sub _write_styles_file {
         $fill_count,
         $custom_colors,
         $dxf_formats,
+        $has_comments,
     );
 
     $rels->_set_xml_writer( $dir . '/xl/styles.xml' );
@@ -995,7 +997,7 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-(c) MM-MMXIX, John McNamara.
+(c) MM-MMXX, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.
 

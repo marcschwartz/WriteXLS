@@ -4,7 +4,7 @@ use strict;
 use vars qw( $VERSION @ISA );
 
 BEGIN {
-    $VERSION = '1.66';
+    $VERSION = '1.68';
     @ISA     = qw ( Archive::Zip::FileMember );
 }
 
@@ -22,8 +22,8 @@ sub _newFromZipFile {
     my $class              = shift;
     my $fh                 = shift;
     my $externalFileName   = shift;
-    my $archiveZip64       = shift // 0;
-    my $possibleEocdOffset = shift // 0;     # normally 0
+    my $archiveZip64       = @_ ? shift : 0;
+    my $possibleEocdOffset = @_ ? shift : 0;     # normally 0
 
     my $self = $class->new(
         'eocdCrc32'                 => 0,
@@ -206,8 +206,8 @@ sub _skipLocalFileHeader {
           if ( $oldCrc32 != $self->{'crc32'}
             || $oldUncompressedSize != $self->{'uncompressedSize'});
 
-        $self->{'crc32'} = 0 
-            if $self->compressionMethod() == COMPRESSION_STORED ; 
+        $self->{'crc32'} = 0
+            if $self->compressionMethod() == COMPRESSION_STORED ;
     }
 
     return AZ_OK;

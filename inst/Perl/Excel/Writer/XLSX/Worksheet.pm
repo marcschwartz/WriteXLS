@@ -7,7 +7,7 @@ package Excel::Writer::XLSX::Worksheet;
 #
 # Used in conjunction with Excel::Writer::XLSX
 #
-# Copyright 2000-2019, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2020, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -30,7 +30,7 @@ use Excel::Writer::XLSX::Utility qw(xl_cell_to_rowcol
                                     quote_sheetname);
 
 our @ISA     = qw(Excel::Writer::XLSX::Package::XMLwriter);
-our $VERSION = '1.00';
+our $VERSION = '1.07';
 
 
 ###############################################################################
@@ -68,6 +68,7 @@ sub new {
     $self->{_tempdir}            = $_[10];
     $self->{_excel2003_style}    = $_[11];
     $self->{_default_url_format} = $_[12];
+    $self->{_max_url_length}     = $_[13] || 2079;
 
     $self->{_ext_sheets}    = [];
     $self->{_fileclosed}    = 0;
@@ -159,6 +160,7 @@ sub new {
     $self->{_original_row_height} = 15;
     $self->{_default_row_height}  = 15;
     $self->{_default_row_pixels}  = 20;
+    $self->{_default_col_width}   = 8.43;
     $self->{_default_col_pixels}  = 64;
     $self->{_default_row_zeroed}  = 0;
 
@@ -211,6 +213,10 @@ sub new {
     $self->{_shape_hash}             = {};
     $self->{_has_shapes}             = 0;
     $self->{_drawing}                = 0;
+    $self->{_drawing_rels}           = {};
+    $self->{_drawing_rels_id}        = 0;
+    $self->{_vml_drawing_rels}           = {};
+    $self->{_vml_drawing_rels_id}        = 0;
 
     $self->{_horizontal_dpi} = 0;
     $self->{_vertical_dpi}   = 0;
@@ -630,13 +636,16 @@ sub set_column {
 
     # Store the col sizes for use when calculating image vertices taking
     # hidden columns into account. Also store the column formats.
-    my $width = $data[4] ? 0 : $data[2];    # Set width to zero if hidden.
+    my $width  = $data[2];
     my $format = $data[3];
+    my $hidden = $data[4] || 0;
+
+    $width = $self->{_default_col_width} if !defined $width;
 
     my ( $firstcol, $lastcol ) = @data;
 
     foreach my $col ( $firstcol .. $lastcol ) {
-        $self->{_col_sizes}->{$col} = $width;
+        $self->{_col_sizes}->{$col}   = [$width, $hidden];
         $self->{_col_formats}->{$col} = $format if $format;
     }
 }
@@ -2174,7 +2183,7 @@ sub write_comment {
     $self->{_has_comments} = 1;
 
     # Process the properties of the cell comment.
-    $self->{_comments}->{$row}->{$col} = [ $self->_comment_params( @_ ) ];
+    $self->{_comments}->{$row}->{$col} = [ @_ ];
 }
 
 
@@ -2232,6 +2241,7 @@ sub write_number {
 #         -1 : insufficient number of arguments
 #         -2 : row or column out of range
 #         -3 : long string truncated to 32767 chars
+#         -4 : Ignore undef strings
 #
 sub write_string {
 
@@ -2251,6 +2261,9 @@ sub write_string {
     my $type = 's';                # The data type
     my $index;
     my $str_error = 0;
+
+    # Ignore undef strings.
+    return -4 if !defined $str;
 
     # Check that row and col are valid and store max and min values
     return -2 if $self->_check_dimensions( $row, $col );
@@ -2568,10 +2581,9 @@ sub write_array_formula {
     ( $row1, $row2 ) = ( $row2, $row1 ) if $row1 > $row2;
     ( $col1, $col2 ) = ( $col1, $col2 ) if $col1 > $col2;
 
-
-    # Check that row and col are valid and store max and min values
+    # Check that row and col are valid and store max and min values.
+    return -2 if $self->_check_dimensions( $row1, $col1 );
     return -2 if $self->_check_dimensions( $row2, $col2 );
-
 
     # Define array range
     my $range;
@@ -2806,9 +2818,10 @@ sub write_url {
 
     # Excel limits the escaped URL and location/anchor to 255 characters.
     my $tmp_url_str = $url_str || '';
+    my $max_url     = $self->{_max_url_length};
 
-    if ( length $url > 255 || length $tmp_url_str > 255 ) {
-        carp "Ignoring URL '$url' where link or anchor > 255 characters "
+    if ( length $url > $max_url || length $tmp_url_str > $max_url ) {
+        carp "Ignoring URL '$url' where link or anchor > $max_url characters "
           . "since it exceeds Excel's limit for URLS. See LIMITATIONS "
           . "section of the Excel::Writer::XLSX documentation.";
         return -4;
@@ -2819,7 +2832,7 @@ sub write_url {
 
     if ( $self->{_hlink_count} > 65_530 ) {
         carp "Ignoring URL '$url' since it exceeds Excel's limit of 65,530 "
-          . "URLS per worksheet. See LIMITATIONS section of the "
+          . "URLs per worksheet. See LIMITATIONS section of the "
           . "Excel::Writer::XLSX documentation.";
         return -5;
     }
@@ -3093,12 +3106,8 @@ sub set_row {
     # Store the row change to allow optimisations.
     $self->{_row_size_changed} = 1;
 
-    if ($hidden) {
-        $height = 0;
-    }
-
     # Store the row sizes for use when calculating image vertices.
-    $self->{_row_sizes}->{$row} = $height;
+    $self->{_row_sizes}->{$row} = [$height, $hidden];
 }
 
 
@@ -3164,8 +3173,9 @@ sub merge_range {
     ( $col_first, $col_last ) = ( $col_last, $col_first )
       if $col_first > $col_last;
 
-    # Check that column number is valid and store the max value
-    return if $self->_check_dimensions( $row_last, $col_last );
+    # Check that the data range is valid and store the max and min values.
+    return -2 if $self->_check_dimensions( $row_first, $col_first );
+    return -2 if $self->_check_dimensions( $row_last, $col_last );
 
     # Store the merge range.
     push @{ $self->{_merge} }, [ $row_first, $col_first, $row_last, $col_last ];
@@ -3235,8 +3245,9 @@ sub merge_range_type {
     ( $col_first, $col_last ) = ( $col_last, $col_first )
       if $col_first > $col_last;
 
-    # Check that column number is valid and store the max value
-    return if $self->_check_dimensions( $row_last, $col_last );
+    # Check that the data range is valid and store the max and min values.
+    return -2 if $self->_check_dimensions( $row_first, $col_first );
+    return -2 if $self->_check_dimensions( $row_last, $col_last );
 
     # Store the merge range.
     push @{ $self->{_merge} }, [ $row_first, $col_first, $row_last, $col_last ];
@@ -4146,7 +4157,7 @@ sub conditional_formatting {
 
 ###############################################################################
 #
-# Set the sub-properites for icons.
+# Set the sub-properties for icons.
 #
 sub _set_icon_properties {
 
@@ -4767,13 +4778,13 @@ sub insert_button {
 sub set_vba_name {
 
     my $self         = shift;
-    my $vba_codemame = shift;
+    my $vba_codename = shift;
 
-    if ( $vba_codemame ) {
-        $self->{_vba_codename} = $vba_codemame;
+    if ( $vba_codename ) {
+        $self->{_vba_codename} = $vba_codename;
     }
     else {
-        $self->{_vba_codename} = $self->{_name};
+        $self->{_vba_codename} = "Sheet" . ($self->{_index} + 1);
     }
 }
 
@@ -5107,6 +5118,10 @@ sub _check_dimensions {
 # the width and height of the object from the width and height of the
 # underlying cells.
 #
+# The anchor/object position defines how images are scaled for hidden rows and
+# columns. For option 1 "Move and size with cells" the size of the hidden
+# row/column is subtracted from the image.
+#
 sub _position_object_pixels {
 
     my $self = shift;
@@ -5129,7 +5144,9 @@ sub _position_object_pixels {
     my $x_abs = 0;    # Absolute distance to left side of object.
     my $y_abs = 0;    # Absolute distance to top  side of object.
 
-    ( $col_start, $row_start, $x1, $y1, $width, $height ) = @_;
+    my $anchor;       # The type of object positioning.
+
+    ( $col_start, $row_start, $x1, $y1, $width, $height, $anchor ) = @_;
 
     # Adjust start column for negative offsets.
     while ( $x1 < 0 && $col_start > 0) {
@@ -5174,21 +5191,16 @@ sub _position_object_pixels {
 
     $y_abs += $y1;
 
-
     # Adjust start column for offsets that are greater than the col width.
-    if ($self->_size_col( $col_start) > 0 ) {
-        while ( $x1 >= $self->_size_col( $col_start ) ) {
-            $x1 -= $self->_size_col( $col_start );
-            $col_start++;
-        }
+    while ( $x1 >= $self->_size_col( $col_start, $anchor ) ) {
+        $x1 -= $self->_size_col( $col_start );
+        $col_start++;
     }
 
     # Adjust start row for offsets that are greater than the row height.
-    if ( $self->_size_row( $row_start ) > 0 ) {
-        while ( $y1 >= $self->_size_row( $row_start ) ) {
-            $y1 -= $self->_size_row( $row_start );
-            $row_start++;
-        }
+    while ( $y1 >= $self->_size_row( $row_start, $anchor ) ) {
+        $y1 -= $self->_size_row( $row_start );
+        $row_start++;
     }
 
     # Initialise end cell to the same as the start cell.
@@ -5196,24 +5208,24 @@ sub _position_object_pixels {
     $row_end = $row_start;
 
     # Only offset the image in the cell if the row/col isn't hidden.
-    if ($self->_size_col( $col_start) > 0 ) {
+    if ($self->_size_col( $col_start, $anchor) > 0 ) {
         $width  = $width + $x1;
     }
 
-    if ( $self->_size_row( $row_start ) > 0 ) {
+    if ( $self->_size_row( $row_start, $anchor ) > 0 ) {
         $height = $height + $y1;
     }
 
     # Subtract the underlying cell widths to find the end cell of the object.
-    while ( $width >= $self->_size_col( $col_end ) ) {
-        $width -= $self->_size_col( $col_end );
+    while ( $width >= $self->_size_col( $col_end, $anchor ) ) {
+        $width -= $self->_size_col( $col_end, $anchor );
         $col_end++;
     }
 
 
     # Subtract the underlying cell heights to find the end cell of the object.
-    while ( $height >= $self->_size_row( $row_end ) ) {
-        $height -= $self->_size_row( $row_end );
+    while ( $height >= $self->_size_row( $row_end, $anchor ) ) {
+        $height -= $self->_size_row( $row_end, $anchor );
         $row_end++;
     }
 
@@ -5322,25 +5334,28 @@ sub _position_shape_emus {
 #
 # Convert the width of a cell from user's units to pixels. Excel rounds the
 # column width to the nearest pixel. If the width hasn't been set by the user
-# we use the default value. If the column is hidden it has a value of zero.
+# we use the default value. A hidden column is treated as having a width of
+# zero unless it has the special "object_position" of 4 (size with cells).
 #
 sub _size_col {
 
-    my $self = shift;
-    my $col  = shift;
+    my $self    = shift;
+    my $col     = shift;
+    my $anchor  = shift || 0;
 
     my $max_digit_width = 7;    # For Calabri 11.
     my $padding         = 5;
     my $pixels;
 
+
     # Look up the cell value to see if it has been changed.
-    if ( exists $self->{_col_sizes}->{$col}
-        and defined $self->{_col_sizes}->{$col} )
+    if ( exists $self->{_col_sizes}->{$col} )
     {
-        my $width = $self->{_col_sizes}->{$col};
+        my $width  = $self->{_col_sizes}->{$col}[0];
+        my $hidden = $self->{_col_sizes}->{$col}[1];
 
         # Convert to pixels.
-        if ( $width == 0 ) {
+        if ( $hidden == 1 && $anchor != 4 ) {
             $pixels = 0;
         }
         elsif ( $width < 1 ) {
@@ -5363,20 +5378,23 @@ sub _size_col {
 # _size_row($row)
 #
 # Convert the height of a cell from user's units to pixels. If the height
-# hasn't been set by the user we use the default value. If the row is hidden
-# it has a value of zero.
+# hasn't been set by the user we use the default value. A hidden row is
+# treated as having a height of zero unless it has the special
+# "object_position" of 4 (size with cells).
 #
 sub _size_row {
 
-    my $self = shift;
-    my $row  = shift;
+    my $self    = shift;
+    my $row     = shift;
+    my $anchor  = shift || 0;
     my $pixels;
 
     # Look up the cell value to see if it has been changed
     if ( exists $self->{_row_sizes}->{$row} ) {
-        my $height = $self->{_row_sizes}->{$row};
+        my $height = $self->{_row_sizes}->{$row}[0];
+        my $hidden = $self->{_row_sizes}->{$row}[1];
 
-        if ( $height == 0 ) {
+        if ( $hidden == 1 && $anchor != 4 ) {
             $pixels = 0;
         }
         else {
@@ -5417,6 +5435,52 @@ sub _get_shared_string_index {
 
 ###############################################################################
 #
+# _get_drawing_rel_index()
+#
+# Get the index used to address a drawing rel link.
+#
+sub _get_drawing_rel_index {
+
+    my $self   = shift;
+    my $target = shift;
+
+    if ( ! defined $target ) {
+        # Undefined values for drawings like charts will always be unique.
+        return ++$self->{_drawing_rels_id};
+    }
+    elsif ( exists $self->{_drawing_rels}->{$target} ) {
+        return $self->{_drawing_rels}->{$target};
+    }
+    else {
+        $self->{_drawing_rels}->{$target} = ++$self->{_drawing_rels_id};
+        return $self->{_drawing_rels_id};
+    }
+}
+
+
+###############################################################################
+#
+# _get_vml_drawing_rel_index()
+#
+# Get the index used to address a vml_drawing rel link.
+#
+sub _get_vml_drawing_rel_index {
+
+    my $self   = shift;
+    my $target = shift;
+
+    if ( exists $self->{_vml_drawing_rels}->{$target} ) {
+        return $self->{_vml_drawing_rels}->{$target};
+    }
+    else {
+        $self->{_vml_drawing_rels}->{$target} = ++$self->{_vml_drawing_rels_id};
+        return $self->{_vml_drawing_rels_id};
+    }
+}
+
+
+###############################################################################
+#
 # insert_chart( $row, $col, $chart, $x, $y, $x_scale, $y_scale )
 #
 # Insert a chart into a worksheet. The $chart argument should be a Chart
@@ -5435,10 +5499,11 @@ sub insert_chart {
     my $row      = $_[0];
     my $col      = $_[1];
     my $chart    = $_[2];
-    my $x_offset = $_[3] || 0;
-    my $y_offset = $_[4] || 0;
-    my $x_scale  = $_[5] || 1;
-    my $y_scale  = $_[6] || 1;
+    my $x_offset;
+    my $y_offset;
+    my $x_scale;
+    my $y_scale;
+    my $anchor;
 
     croak "Insufficient arguments in insert_chart()" unless @_ >= 3;
 
@@ -5452,6 +5517,24 @@ sub insert_chart {
         croak "Not a embedded style Chart object in insert_chart()"
           unless $chart->{_embedded};
 
+    }
+
+    if ( ref $_[3] eq 'HASH' ) {
+        # Newer hashref bashed options.
+        my $options = $_[3];
+        $x_offset = $options->{x_offset}        || 0;
+        $y_offset = $options->{y_offset}        || 0;
+        $x_scale  = $options->{x_scale}         || 1;
+        $y_scale  = $options->{y_scale}         || 1;
+        $anchor   = $options->{object_position} || 1;
+    }
+    else {
+        # Older parameter based options.
+        $x_offset = $_[3] || 0;
+        $y_offset = $_[4] || 0;
+        $x_scale  = $_[5] || 1;
+        $y_scale  = $_[6] || 1;
+        $anchor   = $_[7] || 1;
     }
 
     # Ensure a chart isn't inserted more than once.
@@ -5476,7 +5559,7 @@ sub insert_chart {
     $y_offset = $chart->{_y_offset} if $chart->{_y_offset};
 
     push @{ $self->{_charts} },
-      [ $row, $col, $chart, $x_offset, $y_offset, $x_scale, $y_scale ];
+      [ $row, $col, $chart, $x_offset, $y_offset, $x_scale, $y_scale, $anchor ];
 }
 
 
@@ -5493,9 +5576,10 @@ sub _prepare_chart {
     my $chart_id     = shift;
     my $drawing_id   = shift;
     my $drawing_type = 1;
+    my $drawing;
 
-    my ( $row, $col, $chart, $x_offset, $y_offset, $x_scale, $y_scale ) =
-      @{ $self->{_charts}->[$index] };
+    my ( $row, $col, $chart, $x_offset, $y_offset, $x_scale, $y_scale, $anchor )
+      = @{ $self->{_charts}->[$index] };
 
     $chart->{_id} = $chart_id - 1;
 
@@ -5508,7 +5592,7 @@ sub _prepare_chart {
 
     my @dimensions =
       $self->_position_object_emus( $col, $row, $x_offset, $y_offset, $width,
-        $height);
+        $height, $anchor);
 
     # Set the chart name for the embedded object if it has been specified.
     my $name = $chart->{_chart_name};
@@ -5516,22 +5600,29 @@ sub _prepare_chart {
     # Create a Drawing object to use with worksheet unless one already exists.
     if ( !$self->{_drawing} ) {
 
-        my $drawing = Excel::Writer::XLSX::Drawing->new();
-        $drawing->_add_drawing_object( $drawing_type, @dimensions, 0, 0,
-            $name );
+        $drawing              = Excel::Writer::XLSX::Drawing->new();
         $drawing->{_embedded} = 1;
-
-        $self->{_drawing} = $drawing;
+        $self->{_drawing}     = $drawing;
 
         push @{ $self->{_external_drawing_links} },
           [ '/drawing', '../drawings/drawing' . $drawing_id . '.xml' ];
     }
     else {
-        my $drawing = $self->{_drawing};
-        $drawing->_add_drawing_object( $drawing_type, @dimensions, 0, 0,
-            $name );
-
+        $drawing = $self->{_drawing};
     }
+
+    my $drawing_object = $drawing->_add_drawing_object();
+
+    $drawing_object->{_type}          = $drawing_type;
+    $drawing_object->{_dimensions}    = \@dimensions;
+    $drawing_object->{_width}         = 0;
+    $drawing_object->{_height}        = 0;
+    $drawing_object->{_description}   = $name;
+    $drawing_object->{_shape}         = undef;
+    $drawing_object->{_anchor}        = $anchor;
+    $drawing_object->{_rel_index}     = $self->_get_drawing_rel_index();
+    $drawing_object->{_url_rel_index} = 0;
+    $drawing_object->{_tip}           = undef;
 
     push @{ $self->{_drawing_links} },
       [ '/chart', '../charts/chart' . $chart_id . '.xml' ];
@@ -5620,7 +5711,7 @@ sub _get_range_data {
 
 ###############################################################################
 #
-# insert_image( $row, $col, $filename, $x, $y, $x_scale, $y_scale )
+# insert_image( $row, $col, $filename, $options )
 #
 # Insert an image into the worksheet.
 #
@@ -5636,16 +5727,42 @@ sub insert_image {
     my $row      = $_[0];
     my $col      = $_[1];
     my $image    = $_[2];
-    my $x_offset = $_[3] || 0;
-    my $y_offset = $_[4] || 0;
-    my $x_scale  = $_[5] || 1;
-    my $y_scale  = $_[6] || 1;
+    my $x_offset;
+    my $y_offset;
+    my $x_scale;
+    my $y_scale;
+    my $anchor;
+    my $url;
+    my $tip;
+
+    if ( ref $_[3] eq 'HASH' ) {
+        # Newer hashref bashed options.
+        my $options = $_[3];
+        $x_offset = $options->{x_offset}        || 0;
+        $y_offset = $options->{y_offset}        || 0;
+        $x_scale  = $options->{x_scale}         || 1;
+        $y_scale  = $options->{y_scale}         || 1;
+        $anchor   = $options->{object_position} || 2;
+        $url      = $options->{url};
+        $tip      = $options->{tip};
+    }
+    else {
+        # Older parameter based options.
+        $x_offset = $_[3] || 0;
+        $y_offset = $_[4] || 0;
+        $x_scale  = $_[5] || 1;
+        $y_scale  = $_[6] || 1;
+        $anchor   = $_[7] || 2;
+    }
 
     croak "Insufficient arguments in insert_image()" unless @_ >= 3;
     croak "Couldn't locate $image: $!" unless -e $image;
 
     push @{ $self->{_images} },
-      [ $row, $col, $image, $x_offset, $y_offset, $x_scale, $y_scale ];
+      [
+        $row,     $col,     $image, $x_offset, $y_offset,
+        $x_scale, $y_scale, $url,   $tip,      $anchor
+      ];
 }
 
 
@@ -5667,11 +5784,14 @@ sub _prepare_image {
     my $image_type   = shift;
     my $x_dpi        = shift;
     my $y_dpi        = shift;
+    my $md5          = shift;
     my $drawing_type = 2;
     my $drawing;
 
-    my ( $row, $col, $image, $x_offset, $y_offset, $x_scale, $y_scale ) =
-      @{ $self->{_images}->[$index] };
+    my (
+        $row,     $col,     $image, $x_offset, $y_offset,
+        $x_scale, $y_scale, $url,   $tip,      $anchor
+    ) = @{ $self->{_images}->[$index] };
 
     $width  *= $x_scale;
     $height *= $y_scale;
@@ -5681,7 +5801,7 @@ sub _prepare_image {
 
     my @dimensions =
       $self->_position_object_emus( $col, $row, $x_offset, $y_offset, $width,
-        $height);
+        $height, $anchor);
 
     # Convert from pixels to emus.
     $width  = int( 0.5 + ( $width * 9_525 ) );
@@ -5690,10 +5810,9 @@ sub _prepare_image {
     # Create a Drawing object to use with worksheet unless one already exists.
     if ( !$self->{_drawing} ) {
 
-        $drawing = Excel::Writer::XLSX::Drawing->new();
+        $drawing              = Excel::Writer::XLSX::Drawing->new();
         $drawing->{_embedded} = 1;
-
-        $self->{_drawing} = $drawing;
+        $self->{_drawing}     = $drawing;
 
         push @{ $self->{_external_drawing_links} },
           [ '/drawing', '../drawings/drawing' . $drawing_id . '.xml' ];
@@ -5702,12 +5821,64 @@ sub _prepare_image {
         $drawing = $self->{_drawing};
     }
 
-    $drawing->_add_drawing_object( $drawing_type, @dimensions, $width, $height,
-        $name );
+    my $drawing_object = $drawing->_add_drawing_object();
+
+    $drawing_object->{_type}          = $drawing_type;
+    $drawing_object->{_dimensions}    = \@dimensions;
+    $drawing_object->{_width}         = $width;
+    $drawing_object->{_height}        = $height;
+    $drawing_object->{_description}   = $name;
+    $drawing_object->{_shape}         = undef;
+    $drawing_object->{_anchor}        = $anchor;
+    $drawing_object->{_rel_index}     = 0;
+    $drawing_object->{_url_rel_index} = 0;
+    $drawing_object->{_tip}           = $tip;
 
 
-    push @{ $self->{_drawing_links} },
-      [ '/image', '../media/image' . $image_id . '.' . $image_type ];
+    if ( $url ) {
+        my $rel_type    = '/hyperlink';
+        my $target_mode = 'External';
+        my $target;
+
+        if ( $url =~ m{^[fh]tt?ps?://} || $url =~ m{^mailto:} ) {
+            $target = _escape_url( $url );
+        }
+
+        if ( $url =~ s{^external:}{file:///} ) {
+            $target = _escape_url( $url );
+
+            # Additional escape not required in worksheet hyperlinks.
+            $target =~ s/#/%23/g;
+        }
+
+        if ( $url =~ s/^internal:/#/ ) {
+            $target      = $url;
+            $target_mode = undef;
+        }
+
+        my $max_url = $self->{_max_url_length};
+        if ( length $target > $max_url ) {
+            carp "Ignoring URL '$url' where link or anchor > $max_url characters "
+              . "since it exceeds Excel's limit for URLS. See LIMITATIONS "
+              . "section of the Excel::Writer::XLSX documentation.";
+        }
+        else {
+            if ( $target && !exists $self->{_drawing_rels}->{$url} ) {
+                push @{ $self->{_drawing_links} },
+                  [ $rel_type, $target, $target_mode ];
+            }
+
+            $drawing_object->{_url_rel_index} =
+              $self->_get_drawing_rel_index( $url );
+        }
+    }
+
+    if ( !exists $self->{_drawing_rels}->{$md5} ) {
+        push @{ $self->{_drawing_links} },
+          [ '/image', '../media/image' . $image_id . '.' . $image_type ];
+    }
+
+    $drawing_object->{_rel_index} = $self->_get_drawing_rel_index( $md5 );
 }
 
 
@@ -5728,15 +5899,20 @@ sub _prepare_header_image {
     my $position   = shift;
     my $x_dpi      = shift;
     my $y_dpi      = shift;
+    my $md5        = shift;
 
     # Strip the extension from the filename.
     $name =~ s/\.[^\.]+$//;
 
-    push @{ $self->{_header_images_array} },
-      [ $width, $height, $name, $position, $x_dpi, $y_dpi ];
+    if ( !exists $self->{_vml_drawing_rels}->{$md5} ) {
+        push @{ $self->{_vml_drawing_links} },
+          [ '/image', '../media/image' . $image_id . '.' . $image_type ];
+    }
 
-    push @{ $self->{_vml_drawing_links} },
-      [ '/image', '../media/image' . $image_id . '.' . $image_type ];
+    my $ref_id = $self->_get_vml_drawing_rel_index( $md5 );
+
+    push @{ $self->{_header_images_array} },
+      [ $width, $height, $name, $position, $x_dpi, $y_dpi, $ref_id ];
 }
 
 
@@ -5774,6 +5950,7 @@ sub insert_shape {
     # existing shape scale factors.
     $shape->{_scale_x} = $_[5] if defined $_[5];
     $shape->{_scale_y} = $_[6] if defined $_[6];
+    $shape->{_anchor}  = $_[7] || 1;
 
     # Assign a shape ID.
     my $needs_id = 1;
@@ -5805,7 +5982,7 @@ sub insert_shape {
         # if the stencil is modified.
         my $insert = { %{$shape} };
 
-       # For connectors change x/y coords based on location of connected shapes.
+       # For connectors change x/y co-ords based on location of connected shapes.
         $self->_auto_locate_connectors( $insert );
 
         # Bless the copy into this class, so AUTOLOADED _get, _set methods
@@ -5817,7 +5994,7 @@ sub insert_shape {
     }
     else {
 
-       # For connectors change x/y coords based on location of connected shapes.
+       # For connectors change x/y co-ords based on location of connected shapes.
         $self->_auto_locate_connectors( $shape );
 
         # Insert a link to the shape on the list of shapes. Connection to
@@ -5870,11 +6047,20 @@ sub _prepare_shape {
         $shape->{_column_end},   $shape->{_row_end},
         $shape->{_x2},           $shape->{_y2},
         $shape->{_x_abs},        $shape->{_y_abs},
-        $shape->{_width_emu},    $shape->{_height_emu},
     );
 
-    $drawing->_add_drawing_object( $drawing_type, @dimensions, $shape->{_name},
-        $shape );
+    my $drawing_object = $drawing->_add_drawing_object();
+
+    $drawing_object->{_type}          = $drawing_type;
+    $drawing_object->{_dimensions}    = \@dimensions;
+    $drawing_object->{_width}         = $shape->{_width_emu};
+    $drawing_object->{_height}        = $shape->{_height_emu};
+    $drawing_object->{_description}   = $shape->{_name};
+    $drawing_object->{_shape}         = $shape;
+    $drawing_object->{_anchor}        = $shape->{_anchor};
+    $drawing_object->{_rel_index}     = $self->_get_drawing_rel_index();
+    $drawing_object->{_url_rel_index} = 0;
+    $drawing_object->{_tip}           = undef;
 }
 
 
@@ -6047,6 +6233,10 @@ sub _prepare_vml_objects {
         my @cols = sort { $a <=> $b } keys %{ $self->{_comments}->{$row} };
 
         for my $col ( @cols ) {
+            my $user_options = $self->{_comments}->{$row}->{$col};
+            my $params = [ $self->_comment_params( @$user_options ) ];
+
+            $self->{_comments}->{$row}->{$col} = $params;
 
             # Set comment visibility if required and not already user defined.
             if ( $self->{_comments_visible} ) {
@@ -6328,7 +6518,7 @@ sub _comment_params {
 # _button_params()
 #
 # This method handles the parameters passed to insert_button() as well as
-# calculating the comment object position and vertices.
+# calculating the button object position and vertices.
 #
 sub _button_params {
 
@@ -6370,7 +6560,7 @@ sub _button_params {
     $params->{x_offset}  = 0  if !$params->{x_offset};
     $params->{y_offset}  = 0  if !$params->{y_offset};
 
-    # Scale the size of the comment box if required.
+    # Scale the size of the button box if required.
     if ( $params->{x_scale} ) {
         $params->{width} = $params->{width} * $params->{x_scale};
     }
@@ -6386,7 +6576,7 @@ sub _button_params {
     $params->{start_row} = $row;
     $params->{start_col} = $col;
 
-    # Calculate the positions of comment object.
+    # Calculate the positions of button object.
     my @vertices = $self->_position_object_pixels(
         $params->{start_col}, $params->{start_row}, $params->{x_offset},
         $params->{y_offset},  $params->{width},     $params->{height}
@@ -7391,7 +7581,9 @@ sub _write_cell {
     elsif ( $type eq 'f' ) {
 
         # Write a formula.
-        my $value = $cell->[3] || 0;
+        my $value = $cell->[3];
+
+        $value = 0 if !defined $value;
 
         # Check if the formula value is a string.
         if (   $value
@@ -9145,7 +9337,7 @@ sub _write_icon_set {
 
     $self->xml_start_tag( 'iconSet', @attributes );
 
-    # Write the properites for different icon styles.
+    # Write the properties for different icon styles.
     for my $icon ( reverse @{ $param->{icons} } ) {
         $self->_write_cfvo(
             $icon->{'type'},
@@ -10035,6 +10227,6 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-(c) MM-MMXIX, John McNamara.
+(c) MM-MMXX, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.

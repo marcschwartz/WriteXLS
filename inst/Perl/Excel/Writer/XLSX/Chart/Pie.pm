@@ -8,7 +8,7 @@ package Excel::Writer::XLSX::Chart::Pie;
 #
 # See formatting note in Excel::Writer::XLSX::Chart.
 #
-# Copyright 2000-2019, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2020, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -22,7 +22,7 @@ use Carp;
 use Excel::Writer::XLSX::Chart;
 
 our @ISA     = qw(Excel::Writer::XLSX::Chart);
-our $VERSION = '1.00';
+our $VERSION = '1.07';
 
 
 ###############################################################################
@@ -115,22 +115,6 @@ sub _write_pie_chart {
 }
 
 
-###############################################################################
-#
-# combine()
-#
-# Override parent method to add a warning.
-#
-sub combine {
-
-    my $self  = shift;
-    my $chart = shift;
-
-    carp "Combined chart not currently supported for Pie charts";
-    return;
-}
-
-
 ##############################################################################
 #
 # _write_plot_area().
@@ -143,6 +127,7 @@ sub combine {
 sub _write_plot_area {
 
     my $self = shift;
+    my $second_chart = $self->{_combined};
 
     $self->xml_start_tag( 'c:plotArea' );
 
@@ -151,6 +136,27 @@ sub _write_plot_area {
 
     # Write the subclass chart type element.
     $self->_write_chart_type();
+
+    # Configure a combined chart if present.
+    if ( $second_chart ) {
+
+        # Secondary axis has unique id otherwise use same as primary.
+        if ( $second_chart->{_is_secondary} ) {
+            $second_chart->{_id} = 1000 + $self->{_id};
+        }
+        else {
+            $second_chart->{_id} = $self->{_id};
+        }
+
+        # Shart the same filehandle for writing.
+        $second_chart->{_fh} = $self->{_fh};
+
+        # Share series index with primary chart.
+        $second_chart->{_series_index} = $self->{_series_index};
+
+        # Write the subclass chart type elements for combined chart.
+        $second_chart->_write_chart_type();
+    }
 
     # Write the c:spPr element for the plotarea formatting.
     $self->_write_sp_pr( $self->{_plotarea} );
@@ -503,6 +509,6 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-Copyright MM-MMXIX, John McNamara.
+Copyright MM-MMXX, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.

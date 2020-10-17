@@ -6,7 +6,7 @@ use strict;
 use vars qw( $VERSION @ISA );
 
 BEGIN {
-    $VERSION = '1.66';
+    $VERSION = '1.68';
     @ISA     = qw( Archive::Zip );
 
     if ($^O eq 'MSWin32') {
@@ -103,7 +103,7 @@ sub new {
     # headers, regardless of whether the member has an zip64
     # extended information extra field or not:
     #
-    #   version made by: 
+    #   version made by:
     #     30
     #
     #   version needed to extract:
@@ -248,7 +248,7 @@ sub fileName {
     my $self    = shift;
     my $newName = shift;
     if (defined $newName) {
-        $newName =~ s{[\\/]+}{/}g;    # deal with dos/windoze problems
+        $newName =~ y{\\/}{/}s;    # deal with dos/windoze problems
         $self->{'fileName'} = $newName;
     }
     return $self->{'fileName'};
@@ -639,6 +639,8 @@ sub _extractZip64ExtraField
 
     my $zip64 = 0;
     if (defined($zip64Data)) {
+        return _zip64NotSupported() unless ZIP64_SUPPORTED;
+
         my $dataLength = length($zip64Data);
 
         # Try to be tolerant with respect to the fields to be
@@ -673,7 +675,7 @@ sub _extractZip64ExtraField
             @fields = (undef, 0xffffffff, 0xffffffff, 0xffffffff, 0xffff);
         }
         else {
-            @fields = map { $_ // 0 } @_;
+            @fields = map { defined $_ ? $_ : 0 } @_;
         }
 
         my @fieldIndexes  = (0);
@@ -777,7 +779,7 @@ sub _dosToUnixTime {
 
 # Note, this is not exactly UTC 1980, it's 1980 + 12 hours and 1
 # minute so that nothing timezoney can muck us up.
-my $safe_epoch = 31.666060;
+my $safe_epoch = 31.686060;
 
 # convert a unix time to DOS date/time
 # NOT AN OBJECT METHOD!
@@ -807,20 +809,18 @@ sub _unixToDosTime {
 sub _writeLocalFileHeader {
     my $self    = shift;
     my $fh      = shift;
-    my $refresh = shift // 0;
+    my $refresh = @_ ? shift : 0;
 
     my $zip64 = $self->zip64();
     my $hasDataDescriptor = $self->hasDataDescriptor();
 
-    my $versionNeededToExtract;
+    my $versionNeededToExtract = $self->versionNeededToExtract();
     my $crc32;
     my $compressedSize;
     my $uncompressedSize;
     my $localExtraField = $self->localExtraField();
 
     if (! $zip64) {
-        $versionNeededToExtract = 20;
-
         if ($refresh) {
             $crc32            = $self->crc32();
             $compressedSize   = $self->_writeOffset();
@@ -846,7 +846,9 @@ sub _writeLocalFileHeader {
         }
     }
     else {
-        $versionNeededToExtract = 45;
+        return _zip64NotSupported() unless ZIP64_SUPPORTED;
+
+        $versionNeededToExtract = 45 if ($versionNeededToExtract < 45);
 
         my $zip64CompressedSize;
         my $zip64UncompressedSize;
@@ -874,7 +876,7 @@ sub _writeLocalFileHeader {
 
         $localExtraField .= pack('S< S< Q< Q<',
                                  0x0001, 16,
-                                 $zip64UncompressedSize, 
+                                 $zip64UncompressedSize,
                                  $zip64CompressedSize);
     }
 
@@ -890,7 +892,7 @@ sub _writeLocalFileHeader {
            $versionNeededToExtract,
            $self->{'bitFlag'},
            $self->desiredCompressionMethod(),
-           $self->lastModFileDateTime(), 
+           $self->lastModFileDateTime(),
            $crc32,
            $compressedSize,
            $uncompressedSize,
@@ -956,20 +958,20 @@ sub _writeCentralDirectoryFileHeader {
 
     $self->{'zip64'} ||= $zip64;
 
-    my $versionMadeBy;
-    my $versionNeededToExtract;
+    my $versionMadeBy             = $self->versionMadeBy();
+    my $versionNeededToExtract    = $self->versionNeededToExtract();
     my $compressedSize            = $self->_writeOffset();
     my $uncompressedSize          = $self->uncompressedSize();
     my $localHeaderRelativeOffset = $self->writeLocalHeaderRelativeOffset();
     my $cdExtraField              = $self->cdExtraField();
 
-    if (! $zip64) {
-        $versionMadeBy             = 20;
-        $versionNeededToExtract    = 20;
+    if (!$zip64) {
+        # no-op
     }
     else {
-        $versionMadeBy             = 45;
-        $versionNeededToExtract    = 45;
+        return _zip64NotSupported() unless ZIP64_SUPPORTED;
+
+        $versionNeededToExtract = 45 if ($versionNeededToExtract < 45);
 
         my $extraFieldFormat = '';
         my @extraFieldValues = ();
@@ -1049,14 +1051,13 @@ sub _writeCentralDirectoryFileHeader {
     # changed while writing this member.  We already did the
     # zip64 flag.  We must not update the extra fields with any
     # zip64 information, since we consider that internal.
-    $self->{'versionMadeBy'}          = $versionMadeBy;
     $self->{'versionNeededToExtract'} = $versionNeededToExtract;
     $self->{'compressedSize'}         = $self->_writeOffset();
 
     return
       (AZ_OK,
        CENTRAL_DIRECTORY_FILE_HEADER_LENGTH +
-       SIGNATURE_LENGTH + 
+       SIGNATURE_LENGTH +
        $fileNameLength +
        $extraFieldLength +
        $fileCommentLength)
@@ -1082,6 +1083,8 @@ sub _writeDataDescriptor {
                $self->uncompressedSize());
     }
     else {
+        return _zip64NotSupported() unless ZIP64_SUPPORTED;
+
         $descriptor =
           pack(SIGNATURE_FORMAT . DATA_DESCRIPTOR_ZIP64_FORMAT,
                DATA_DESCRIPTOR_SIGNATURE,
@@ -1277,7 +1280,7 @@ sub contents {
             : undef;
 
         # Now call the subclass contents method
-        my $retval = 
+        my $retval =
           $self->contents(pack('C0a*', $newContents)); # in case of Unicode
 
         return wantarray ? ($retval, AZ_OK) : $retval;
@@ -1338,14 +1341,18 @@ sub _writeToFileHandle {
 
     $self->{'writeLocalHeaderRelativeOffset'} = $offset;
 
+    # Determine if I need to refresh the header in a second pass
+    # later.  If in doubt, I'd rather refresh, since it does not
+    # seem to be worth the hassle to save the extra seeks and
+    # writes.  In addition, having below condition independent of
+    # any specific compression methods helps me piping through
+    # members with unknown compression methods unchanged.  See
+    # test t/26_bzip2.t for details.
+    my $headerFieldsUnknown = $self->uncompressedSize() > 0;
+
     # Determine if I need to write a data descriptor
     # I need to do this if I can't refresh the header
     # and I don't know compressed size or crc32 fields.
-    my $headerFieldsUnknown = (
-        ($self->uncompressedSize() > 0)
-          and ($self->compressionMethod() == COMPRESSION_STORED
-            or $self->desiredCompressionMethod() == COMPRESSION_DEFLATED));
-
     my $shouldWriteDataDescriptor =
       ($headerFieldsUnknown and not $fhIsSeekable);
 

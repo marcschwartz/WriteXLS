@@ -4,7 +4,7 @@
 ##
 ## Write R data frames to an Excel binary file using a Perl script
 ##
-## Copyright 2015-2019, Marc Schwartz <marc_schwartz@me.com>
+## Copyright 2015-2020, Marc Schwartz <marc_schwartz@me.com>
 ##
 ## This software is distributed under the terms of the GNU General
 ## Public License Version 2, June 1991.  
@@ -133,11 +133,10 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
     }  
   }
 
-  ## Function to escape any embedded double quote characters
-  ## in a field before writing to the CSV files. With the
-  ## change to writeLines() from write.table(), this is no longer done.
-  escQuote <- function(x) {
-    gsub("\"", "\\\\\"", x)
+  ## Function to double any embedded double quote characters
+  ## in a field before writing to the CSV files.
+  dblQuote <- function(x) {
+    gsub("\"", "\"\"", x)
   }
   
   ## Get path to WriteXLS.pl or WriteXLSX.pl
@@ -224,25 +223,19 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
     }
     
     ## paste() together each row in preparation for line by line output using writeLines()
-    DF.Data <- apply(DF.LIST[[i]], 1, function(x) {paste('"', escQuote(x), '"', sep = "", collapse = ",")})
+    DF.Data <- apply(DF.LIST[[i]], 1, function(x) {paste('"', dblQuote(x), '"', sep = "", collapse = ",")})
 
     ## paste() together the COMMENTS row
-    COMMENTS <- paste('"', escQuote(COMMENTS), '"', sep = "", collapse = ",")
+    COMMENTS <- paste('"', dblQuote(COMMENTS), '"', sep = "", collapse = ",")
 
     ## Output to file using writeLines() with useBytes = TRUE to preserve encodings
     if (col.names) {
       ## paste() together the column names for output
-      Cols.Out <- paste('"', escQuote(colnames(DF.LIST[[i]])), '"', sep = "", collapse = ",")
+      Cols.Out <- paste('"', dblQuote(colnames(DF.LIST[[i]])), '"', sep = "", collapse = ",")
       Lines.Out <- c(Cols.Out, COMMENTS, DF.Data)
     } else {
       Lines.Out <- c(COMMENTS, DF.Data)
     }
-
-    ## Now, replace any newline/carriage return characters with a space
-    ## to prevent a single line from wrapping to newlines when written to
-    ## the CSV file, resulting in corruption of the Excel file.
-    ## The regex will only insert a single space for '\r\n', '\r' or '\n'
-    Lines.Out <- gsub("\r?\n|\r", " ", Lines.Out)
     
     writeLines(Lines.Out, con = paste(Tmp.Dir, "/", i, ".csv", sep = ""), useBytes = TRUE)
   }

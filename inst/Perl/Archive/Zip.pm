@@ -14,7 +14,7 @@ use FileHandle          ();
 use vars qw( $VERSION @ISA );
 
 BEGIN {
-    $VERSION = '1.66';
+    $VERSION = '1.68';
 
     require Exporter;
     @ISA = qw( Exporter );
@@ -39,6 +39,7 @@ BEGIN {
     %EXPORT_TAGS = (
         CONSTANTS => [
             qw(
+              ZIP64_SUPPORTED
               FA_MSDOS
               FA_UNIX
               GPBF_ENCRYPTED_MASK
@@ -157,6 +158,7 @@ BEGIN {
               _printError
               _ioError
               _formatError
+              _zip64NotSupported
               _subclassResponsibility
               _binmode
               _isSeekable
@@ -178,6 +180,9 @@ BEGIN {
           ));
 
 }
+
+# Zip64 format support status
+use constant ZIP64_SUPPORTED => !! eval { pack("Q<", 1) };
 
 # Error codes
 use constant AZ_OK           => 0;
@@ -407,6 +412,14 @@ sub _error {
     return AZ_ERROR;
 }
 
+# This is called if zip64 format is not supported but would be
+# required.
+sub _zip64NotSupported {
+    shift if ref($_[0]);
+    _printError('zip64 format not supported on this Perl interpreter');
+    return AZ_ERROR;
+}
+
 # Called when a subclass should have implemented
 # something but didn't
 sub _subclassResponsibility {
@@ -580,7 +593,7 @@ sub _asZipDirName {
     my ($volume, $directories, $file) =
       File::Spec->splitpath(File::Spec->canonpath($name), $forceDir);
     $$volReturn = $volume if (ref($volReturn));
-    my @dirs = map { $_ =~ s{/}{_}g; $_ } File::Spec->splitdir($directories);
+    my @dirs = map { $_ =~ y{/}{_}; $_ } File::Spec->splitdir($directories);
     if (@dirs > 0) { pop(@dirs) unless $dirs[-1] }    # remove empty component
     push(@dirs, defined($file) ? $file : '');
 
@@ -756,7 +769,7 @@ COMPRESSION_STORED COMPRESSION_DEFLATED IFA_TEXT_FILE_MASK
 IFA_TEXT_FILE IFA_BINARY_FILE COMPRESSION_LEVEL_NONE
 COMPRESSION_LEVEL_DEFAULT COMPRESSION_LEVEL_FASTEST
 COMPRESSION_LEVEL_BEST_COMPRESSION
-ZIP64_AS_NEEDED ZIP64_EOCD ZIP64_HEADERS
+ZIP64_SUPPORTED ZIP64_AS_NEEDED ZIP64_EOCD ZIP64_HEADERS
 
 =item :MISC_CONSTANTS
 
@@ -1993,6 +2006,10 @@ Returns AZ_OK on success.
 
 Returns true if I am a directory.
 
+=item isSymbolicLink()
+
+Returns true if I am a symbolic link.
+
 =item writeLocalHeaderRelativeOffset()
 
 Returns the file offset in bytes the last time I was written.
@@ -2167,6 +2184,57 @@ If you are just going to be extracting zips (and/or other archives) you
 are recommended to look at using L<Archive::Extract> instead, as it is much
 easier to use and factors out archive-specific functionality.
 
+=head2 Zip64 Format Support
+
+Since version 1.66 Archive::Zip supports the so-called zip64
+format, which overcomes various limitations in the original zip
+file format.  On some Perl interpreters, however, even version
+1.66 and newer of Archive::Zip cannot support the zip64 format.
+Among these are all Perl interpreters that lack 64-bit support
+and those older than version 5.10.0.
+
+Constant C<ZIP64_SUPPORTED>, exported with tag L<:CONSTANTS>,
+equals true if Archive::Zip on the current Perl interpreter
+supports the zip64 format.  If it does not and you try to read or
+write an archive in zip64 format, anyway, Archive::Zip returns an
+error C<AZ_ERROR> and reports an error message along the lines of
+"zip64 format not supported on this Perl interpreter".
+
+=head2 C<versionMadeBy> and C<versionNeededToExtract>
+
+The zip64 format and the zip file format in general specify what
+values to use for the C<versionMadeBy> and
+C<versionNeededToExtract> fields in the local file header,
+central directory file header, and zip64 EOCD record.  In
+practice however, these fields seem to be more or less randomly
+used by various archiver implementations.
+
+To achieve a compromise between backward compatibility and
+(whatever) standard compliance, Archive::Zip handles them as
+follows:
+
+=over 4
+
+=item
+
+For field C<versionMadeBy>, Archive::Zip uses default value 20
+(45 for the zip64 EOCD record) or any previously read value. It
+never changes that value when writing a header, even if it is
+written in zip64 format, or when writing the zip64 EOCD record.
+
+=item
+
+Likewise for field C<versionNeededToExtract>, but here
+Archive::Zip forces a minimum value of 45 when writing a header
+in zip64 format or the zip64 EOCD record.
+
+=item
+
+Finally, Archive::Zip never depends on the values of these fields
+in any way when reading an archive from a file or file handle.
+
+=back
+
 =head2 Try to avoid IO::Scalar
 
 One of the most common ways to use Archive::Zip is to generate Zip files
@@ -2215,11 +2283,11 @@ have to re-read the entire archive to try again with the correct password.
 
 =head1 SUPPORT
 
-Bugs should be reported via the CPAN bug tracker
+Bugs should be reported on GitHub
 
-L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Archive-Zip>
+L<https://github.com/redhotpenguin/perl-Archive-Zip/issues>
 
-For other issues contact the maintainer
+For other issues contact the maintainer.
 
 =head1 AUTHOR
 

@@ -6,7 +6,7 @@ package Excel::Writer::XLSX::Package::VML;
 #
 # Used in conjunction with Excel::Writer::XLSX
 #
-# Copyright 2000-2019, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2020, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -20,7 +20,7 @@ use Carp;
 use Excel::Writer::XLSX::Package::XMLwriter;
 
 our @ISA     = qw(Excel::Writer::XLSX::Package::XMLwriter);
-our $VERSION = '1.00';
+our $VERSION = '1.07';
 
 
 ###############################################################################
@@ -655,6 +655,7 @@ sub _write_image_shape {
     my $position = $image_data->[3];
     my $x_dpi    = $image_data->[4];
     my $y_dpi    = $image_data->[5];
+    my $ref_id   = $image_data->[6];
 
     # Scale the height/width by the resolution, relative to 72dpi.
     $width  = $width  * 72 / $x_dpi;
@@ -685,7 +686,7 @@ sub _write_image_shape {
     $self->xml_start_tag( 'v:shape', @attributes );
 
     # Write the v:imagedata element.
-    $self->_write_imagedata( $index, $name );
+    $self->_write_imagedata( $ref_id, $name );
 
     # Write the o:lock element.
     $self->_write_rotation_lock();
@@ -1199,7 +1200,7 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-(c) MM-MMXIX, John McNamara.
+(c) MM-MMXX, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.
 
