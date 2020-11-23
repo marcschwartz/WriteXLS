@@ -243,7 +243,7 @@
   Many thanks to Prof. Brian Ripley for his assistance in the testing of this package. 
 }
 \references{
-  Spreadsheet::WriteExcel Perl Module \url{https://metacpan.org/release//Spreadsheet-WriteExcel}
+  Spreadsheet::WriteExcel Perl Module \url{https://metacpan.org/release/Spreadsheet-WriteExcel}
   
   Excel::Writer::XLSX Perl Module \url{https://metacpan.org/release/Excel-Writer-XLSX}
 
@@ -304,10 +304,9 @@
     WriteXLS(iris.split, "irisList.xlsx")
 
     ## Behavior with leading and/or trailing zeroes
-    DFL0 <- data.frame(A = c("01234", "12345", "01.2300", "123000"), 
-                       B = c("000-00-0000", "123-12-1234", "111-22-3300", "000-10-1230"), 
-                       C = c("0123.4", "1234.5", "0.1234", "1234.0"), 
-                       D = 1:4)
+    DFL0 <- data.frame(A = c("01234", "12345", "012300", "1050", "10230"), 
+                       B = c("000-00", "123-45", "000-10-1230", ".1.2.3.40", "0123.45.6"), 
+                       C = c("0123.4", "001234.5", "0.1234", "1234.0", "1234.00"))
     WriteXLS(DFL0, "DFL0.xlsx", AdjWidth = TRUE, BoldHeaderRow = TRUE)
     WriteXLS(DFL0, "DFL0AT.xlsx", AdjWidth = TRUE, BoldHeaderRow = TRUE, AllText = TRUE)
 

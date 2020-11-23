@@ -233,6 +233,7 @@ sub string_width {
 # 
 # Use write_string(), rather than write() if $AllText is TRUE
 # or there are leading/trailing zeroes
+# Need a hierarchy to catch some patterns first
 
 sub use_write_string {
   
@@ -242,15 +243,35 @@ sub use_write_string {
   # use this all the time
   if ($AllText eq "TRUE") {
     return $worksheet->write_string( @_ );
-  # exception where trailing zeroes preceded
-  # by non-zero digits only, as an integer
-  # Return control to write();  
-  } elsif ($token =~ /^[1-9]+0+$/) {
+    
+  # single leading zero followed by single decimal point and numbers only
+  # e.g. 0.1234
+  # write as number, since Excel will keep the zero.
+  # return control to write();  
+  } elsif ($token =~ /^0\.[0-9]+$/) {
     return undef;
-  # for leading/trailing zeroes
-  # where the leading zero is not followed by a decimal  
-  } elsif ($token =~ /^0[^\.]|0$/) {
+    
+  # anything with a leading zero followed by any
+  # characters, other than a single decimal as above
+  # since Excel will strip the leading zero, if
+  # it can be converted to a valid number  
+  # e.g. 01234 (zip code), 00, 01234.1234 or other identifiers
+  } elsif ($token =~ /^0.+$/) {
     return $worksheet->write_string( @_ );
+    
+  # trailing zeroes preceded
+  # by any digits only, write as an integer
+  # e.g. 12340, 123400, 120340
+  # Return control to write();  
+  } elsif ($token =~ /^[0-9]+0+$/) {
+    return undef;
+
+  # trailing zeros after a decimal point
+  # which Excel will strip to an integer
+  # e.g. 1234.0, 1234.00, .0  
+  } elsif ($token =~ /^.*\.[0-9]*0+$/) {
+    return $worksheet->write_string( @_ );
+
   # else return control to write();  
   } else {
     return undef;
