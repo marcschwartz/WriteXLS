@@ -97,8 +97,6 @@ my $XLSFile  = Excel::Writer::XLSX->new($ExcelFileName);
 die "Problems creating new Excel file: $!" unless defined $XLSFile;
 
 
-
-
 ###############################################################################
 # Get SheetNames.txt contents for Worksheet Names
 #
@@ -240,9 +238,12 @@ sub use_write_string {
   my $worksheet = shift;
   my $token     = $_[2];
 
+  # Add text format for use by write_string()
+  my $text_format = $XLSFile->add_format(num_format => '@'); 
+
   # use this all the time
   if ($AllText eq "TRUE") {
-    return $worksheet->write_string( @_ );
+    return $worksheet->write_string(@_, $text_format);
     
   # single leading zero followed by single decimal point and numbers only
   # e.g. 0.1234
@@ -257,7 +258,7 @@ sub use_write_string {
   # it can be converted to a valid number  
   # e.g. 01234 (zip code), 00, 01234.1234 or other identifiers
   } elsif ($token =~ /^0.+$/) {
-    return $worksheet->write_string( @_ );
+    return $worksheet->write_string(@_, $text_format);
     
   # trailing zeroes preceded
   # by any digits only, write as an integer
@@ -270,7 +271,7 @@ sub use_write_string {
   # which Excel will strip to an integer
   # e.g. 1234.0, 1234.00, .0  
   } elsif ($token =~ /^.*\.[0-9]*0+$/) {
-    return $worksheet->write_string( @_ );
+    return $worksheet->write_string(@_, $text_format);
 
   # else return control to write();  
   } else {

@@ -18,9 +18,12 @@ testPerl <- function(perl = "perl", verbose = TRUE) {
   ## Check For Perl first
   res <- Sys.which(perl)
   
-  if ((res == "") & (verbose)) {
-    message("\nPerl was not found on your system. Either check $PATH if installed or please install Perl.\n",
-            paste("For more information see: ", system.file('INSTALL', package='WriteXLS')), "\n")
+  if (res == "") {
+    
+    if (verbose) {
+      message("\nPerl was not found on your system. Either check $PATH if installed or please install Perl.\n",
+              paste("For more information see: ", system.file('INSTALL', package='WriteXLS')), "\n")
+    }
     
     invisible(FALSE)
   } else {
