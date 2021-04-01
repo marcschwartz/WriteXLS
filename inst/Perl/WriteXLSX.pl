@@ -6,7 +6,7 @@
 #
 # Write to an Excel binary file.
 #
-# Copyright 2015-2020, Marc Schwartz <marc_schwartz@me.com>
+# Copyright 2015-2021, Marc Schwartz <marc_schwartz@me.com>
 #
 # This software is distributed under the terms of the GNU General
 # Public License Version 2, June 1991.  
@@ -95,6 +95,18 @@ if ($verbose eq "TRUE") {
 
 my $XLSFile  = Excel::Writer::XLSX->new($ExcelFileName);
 die "Problems creating new Excel file: $!" unless defined $XLSFile;
+
+
+
+
+###############################################################################
+# Add Text format for the Excel file. Do once here, as each format object adds
+# memory storage requirements, which was a problem in version 6.2.0
+
+# Add text format for use by write_string()
+my $text_format = $XLSFile->add_format(num_format => '@'); 
+
+
 
 
 ###############################################################################
@@ -239,7 +251,7 @@ sub use_write_string {
   my $token     = $_[2];
 
   # Add text format for use by write_string()
-  my $text_format = $XLSFile->add_format(num_format => '@'); 
+  # my $text_format = $XLSFile->add_format(num_format => '@'); 
 
   # use this all the time
   if ($AllText eq "TRUE") {
