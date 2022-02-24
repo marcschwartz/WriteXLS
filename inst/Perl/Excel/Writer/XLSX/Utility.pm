@@ -7,7 +7,7 @@ package Excel::Writer::XLSX::Utility;
 #
 # Used in conjunction with Excel::Writer::XLSX
 #
-# Copyright 2000-2020, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2021, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -21,7 +21,7 @@ use warnings;
 use autouse 'Date::Calc'  => qw(Delta_DHMS Decode_Date_EU Decode_Date_US);
 use autouse 'Date::Manip' => qw(ParseDate Date_Init);
 
-our $VERSION = '1.07';
+our $VERSION = '1.09';
 
 # Row and column functions
 my @rowcol = qw(
@@ -160,7 +160,12 @@ sub xl_range {
     my $range1 = xl_rowcol_to_cell( $row_1, $col_1, $row_abs_1, $col_abs_1 );
     my $range2 = xl_rowcol_to_cell( $row_2, $col_2, $row_abs_2, $col_abs_2 );
 
-    return $range1 . ':' . $range2;
+    if ($range1 eq $range2) {
+        return $range1;
+    }
+    else {
+        return $range1 . ':' . $range2;
+    }
 }
 
 
@@ -612,7 +617,8 @@ This function converts zero based row and column cell references to an A1 style 
     my $str = xl_range( 1, 8, 2, 2 );          # C2:C9
     my $str = xl_range( 0, 3, 0, 4 );          # A1:E4
     my $str = xl_range( 0, 3, 0, 4, 1 );       # A$1:E4
-    my $str = xl_range( 0, 3, 0, 4, 1, 1 );    # A$1:E$4
+    my $str = xl_range( 0, 3, 0, 4, 1, 1 );    # A$1:E$
+    my $str = xl_range( 0, 0, 0, 0 );          # A1
 
 =head2 xl_range_formula($sheetname, $row_1, $row_2, $col_1, $col_2)
 
@@ -904,7 +910,7 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-Copyright MM-MMXX, John McNamara.
+Copyright MM-MMXXI, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.
 

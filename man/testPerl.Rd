@@ -35,6 +35,8 @@
   Archive::Zip, OLE::Storage_Lite, Parse::RecDescent,
   Spreadsheet::WriteExcel, Excel::Writer::XLSX and Text::CSV_PP
 
+  File::Basename and Getopt::Long are "Core" Perl modules and should be part of a
+  standard Perl installation, however, they are both included in WriteXLS as a fall back.
 }
 \author{
   Marc Schwartz \email{marc_schwartz@me.com}

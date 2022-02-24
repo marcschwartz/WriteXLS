@@ -4,7 +4,7 @@
 ##
 ## Test for the presence of Perl and the required modules
 ##
-## Copyright 2015-2021, Marc Schwartz <marc_schwartz@me.com>
+## Copyright 2015-2022, Marc Schwartz <marc_schwartz@me.com>
 ##
 ## This software is distributed under the terms of the GNU General
 ## Public License Version 2, June 1991.  
@@ -21,14 +21,16 @@ testPerl <- function(perl = "perl", verbose = TRUE) {
   if (res == "") {
     
     if (verbose) {
-      message("\nPerl was not found on your system. Either check $PATH if installed or please install Perl.\n",
+      message("\nPerl was not found on your system. Either check your operating system $PATH if installed, or please install Perl.\n",
               paste("For more information see: ", system.file('INSTALL', package='WriteXLS')), "\n")
     }
     
     invisible(FALSE)
   } else {
-    if (verbose)
-      message("Perl found.\n")
+    if (verbose) {
+      message(paste("A system perl installation found in ", res, "\n", sep = ""))
+      message(paste("The perl modules included with WriteXLS are located in ", Perl.Path, "\n", sep  = ""))
+    }  
 
     PerlModules <- c("Archive/Zip.pm",
                      "OLE/Storage_Lite.pm",

@@ -1,5 +1,5 @@
 INSTALLING PERL AND RELATED MODULES TO USE WriteXLS
-February 26, 2019
+February 24, 2022
 
 
 BASIC REQUIREMENTS
@@ -20,10 +20,11 @@ BASIC REQUIREMENTS
 
 GENERAL COMMENTS
 
-As of this writing, the current release version of Perl is 5.28, however not all computer
+As of this writing, the current release version of Perl is 5.34, however not all computer
 systems are using this version. Some will be using earlier distributions of Perl.
 
-File::Basename and Getopt::Long are "Core" Perl modules and should be part of a standard Perl installation.
+File::Basename and Getopt::Long are "Core" Perl modules and should be part of a standard Perl installation,
+however, they are both included in the inst/Perl folder in WriteXLS as a fall back.
 
 The other modules may or may not be installed. Archive::Zip, Excel::Writer::XLSX, OLE::Storage_Lite, 
 Parse::RecDescent, Spreadsheet::WriteExcel and Text::CSV_PP are included in the inst/Perl folder in WriteXLS
@@ -38,7 +39,11 @@ TESTING YOUR PERL INSTALLATION
 A function, testPerl(), has been provided in this package to check for Perl and the required Perl
 modules. If you have any questions as to whether or not your Perl installation is sufficient to support
 WriteXLS(), please use this function. If Perl or any of the required modules are missing, this function
-will provide a list of them. 
+will provide a list of them. If one or more Perl modules are indicated as being missing, please run 
+testPerl(verbose = TRUE) to output additional information, such as search paths, which you may find helpful
+in debugging any issues, especially if you may have more than one Perl installation on your computer. If that
+is the case, you may need to shift the needed version of Perl in your operating system search path ($PATH), 
+so that it is found first.
 
 
 OPERATING SYSTEM SPECIFIC RECOMMENDATIONS
@@ -141,8 +146,8 @@ also an option for you.
 
 macOS
 
-Apple installs a default Perl distribution with macOS on Macs. As of this writing, version 5.18 appears
-to be the most recent version on Mojave (10.14).
+Apple installs a default Perl distribution with macOS on Macs. As of this writing, version 5.30 appears
+to be the most recent version on Big Sur (11.6.4).
 
 As with Windows above, the easiest approach may very well be to replace/supercede Apple's installation with the
 ActiveState Perl installation, which would provide all of the required modules.

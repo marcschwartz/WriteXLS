@@ -6,7 +6,7 @@ package Excel::Writer::XLSX::Package::Packager;
 #
 # Used in conjunction with Excel::Writer::XLSX
 #
-# Copyright 2000-2020, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2021, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -24,6 +24,7 @@ use Excel::Writer::XLSX::Package::Comments;
 use Excel::Writer::XLSX::Package::ContentTypes;
 use Excel::Writer::XLSX::Package::Core;
 use Excel::Writer::XLSX::Package::Custom;
+use Excel::Writer::XLSX::Package::Metadata;
 use Excel::Writer::XLSX::Package::Relationships;
 use Excel::Writer::XLSX::Package::SharedStrings;
 use Excel::Writer::XLSX::Package::Styles;
@@ -32,7 +33,7 @@ use Excel::Writer::XLSX::Package::Theme;
 use Excel::Writer::XLSX::Package::VML;
 
 our @ISA     = qw(Exporter);
-our $VERSION = '1.07';
+our $VERSION = '1.09';
 
 
 ###############################################################################
@@ -145,6 +146,7 @@ sub _create_package {
     $self->_write_drawing_rels_files();
     $self->_add_image_files();
     $self->_add_vba_project();
+    $self->_write_metadata_file();
 }
 
 
@@ -421,6 +423,7 @@ sub _write_app_file {
     }
 
     $app->_set_properties( $properties );
+    $app->{_doc_security} = $self->{_workbook}->{_read_only};
 
     $app->_set_xml_writer( $dir . '/docProps/app.xml' );
     $app->_assemble_xml_file();
@@ -445,6 +448,27 @@ sub _write_core_file {
     $core->_set_properties( $properties );
     $core->_set_xml_writer( $dir . '/docProps/core.xml' );
     $core->_assemble_xml_file();
+}
+
+
+###############################################################################
+#
+# _write_metadata_file()
+#
+# Write the metadata.xml file.
+#
+sub _write_metadata_file {
+
+    my $self       = shift;
+    my $dir        = $self->{_package_dir};
+    my $metadata   = Excel::Writer::XLSX::Package::Metadata->new();
+
+    return if !$self->{_workbook}->{_has_metadata};
+
+    _mkdir( $dir . '/xl' );
+
+    $metadata->_set_xml_writer( $dir . '/xl/metadata.xml' );
+    $metadata->_assemble_xml_file();
 }
 
 
@@ -529,6 +553,11 @@ sub _write_content_types_file {
     # Add the custom properties if present.
     if ( @{ $self->{_workbook}->{_custom_properties} } ) {
         $content->_add_custom_properties();
+    }
+
+    # Add the metadata file if present.
+    if ( $self->{_workbook}->{_has_metadata} ) {
+        $content->_add_metadata();
     }
 
     $content->_set_xml_writer( $dir . '/[Content_Types].xml' );
@@ -709,6 +738,11 @@ sub _write_workbook_rels_file {
         $rels->_add_ms_package_relationship( '/vbaProject', 'vbaProject.bin' );
     }
 
+    # Add the metadata file if required.
+    if ( $self->{_workbook}->{_has_metadata} ) {
+        $rels->_add_document_relationship( '/sheetMetadata', 'metadata.xml' );
+    }
+
     $rels->_set_xml_writer( $dir . '/xl/_rels/workbook.xml.rels' );
     $rels->_assemble_xml_file();
 }
@@ -738,6 +772,7 @@ sub _write_worksheet_rels_files {
             @{ $worksheet->{_external_drawing_links} },
             @{ $worksheet->{_external_vml_links} },
             @{ $worksheet->{_external_table_links} },
+            @{ $worksheet->{_external_background_links} },
             @{ $worksheet->{_external_comment_links} },
         );
 
@@ -997,7 +1032,7 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-(c) MM-MMXX, John McNamara.
+(c) MM-MMXXI, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.
 

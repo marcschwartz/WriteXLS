@@ -6,7 +6,7 @@ package Excel::Writer::XLSX::Package::Styles;
 #
 # Used in conjunction with Excel::Writer::XLSX
 #
-# Copyright 2000-2020, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2021, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -20,7 +20,7 @@ use Carp;
 use Excel::Writer::XLSX::Package::XMLwriter;
 
 our @ISA     = qw(Excel::Writer::XLSX::Package::XMLwriter);
-our $VERSION = '1.07';
+our $VERSION = '1.09';
 
 
 ###############################################################################
@@ -592,6 +592,11 @@ sub _write_fill {
 
     );
 
+    # Special handling for pattern only case.
+    if ( !$fg_color && !$bg_color && $format->{_pattern} ) {
+        $self->_write_default_fill( $patterns[ $format->{_pattern} ] );
+        return;
+    }
 
     $self->xml_start_tag( 'fill' );
 
@@ -618,7 +623,7 @@ sub _write_fill {
         $self->xml_empty_tag( 'bgColor', 'rgb' => $bg_color );
     }
     else {
-        if ( !$dxf_format ) {
+        if ( !$dxf_format && $format->{_pattern} <= 1) {
             $self->xml_empty_tag( 'bgColor', 'indexed' => 64 );
         }
     }
@@ -1188,7 +1193,7 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-(c) MM-MMXX, John McNamara.
+(c) MM-MMXXI, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.
 
