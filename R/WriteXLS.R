@@ -176,7 +176,7 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
   dir.create(Tmp.Dir, recursive = TRUE)
 
   ##  Write Comma Delimited CSV files
-  for (i in seq(along = DF.LIST)) {
+  for (i in seq(along.with = DF.LIST)) {
     if (verbose)
       cat("Creating CSV File: ", i, ".csv", "\n", sep = "")
 

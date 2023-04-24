@@ -67,7 +67,7 @@ testPerl <- function(perl = "perl", verbose = TRUE) {
     L1L2L3 <- c(Level1, Level2, Level3)
 
     ## Search for perl modules
-    for (i in seq(along = PerlModules)) {
+    for (i in seq(along.with = PerlModules)) {
       Found[i] <- any(grep(PerlModules[i], L1L2L3))
     }
 
