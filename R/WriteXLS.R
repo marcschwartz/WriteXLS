@@ -4,7 +4,7 @@
 ##
 ## Write R data frames to an Excel binary file using a Perl script
 ##
-## Copyright 2015-2022, Marc Schwartz <marc_schwartz@me.com>
+## Copyright 2015-2024, Marc Schwartz <marc_schwartz@me.com>
 ##
 ## This software is distributed under the terms of the GNU General
 ## Public License Version 2, June 1991.  
