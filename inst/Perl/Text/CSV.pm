@@ -4,27 +4,41 @@ package Text::CSV;
 use strict;
 use Exporter;
 use Carp ();
-use vars qw( $VERSION $DEBUG @ISA @EXPORT_OK );
+use vars qw( $VERSION $DEBUG @ISA @EXPORT_OK %EXPORT_TAGS );
 @ISA = qw( Exporter );
-@EXPORT_OK = qw( csv );
 
 BEGIN {
-    $VERSION = '2.01';
+    $VERSION = '2.04';
     $DEBUG   = 0;
 }
 
 # if use CSV_XS, requires version
 my $Module_XS  = 'Text::CSV_XS';
 my $Module_PP  = 'Text::CSV_PP';
-my $XS_Version = '1.46';
+my $XS_Version = '1.53';
 
 my $Is_Dynamic = 0;
 
 my @PublicMethods = qw/
     version error_diag error_input
-    known_attributes csv
-    PV IV NV
+    known_attributes
+    PV IV NV CSV_TYPE_PV CSV_TYPE_IV CSV_TYPE_NV
+    CSV_FLAGS_IS_QUOTED CSV_FLAGS_IS_BINARY CSV_FLAGS_ERROR_IN_FIELD CSV_FLAGS_IS_MISSING
 /;
+
+%EXPORT_TAGS = (
+    CONSTANTS => [qw(
+        CSV_FLAGS_IS_QUOTED
+        CSV_FLAGS_IS_BINARY
+        CSV_FLAGS_ERROR_IN_FIELD
+        CSV_FLAGS_IS_MISSING
+        CSV_TYPE_PV
+        CSV_TYPE_IV
+        CSV_TYPE_NV
+    )],
+);
+@EXPORT_OK = (qw(csv PV IV NV), @{$EXPORT_TAGS{CONSTANTS}});
+
 #
 
 # Check the environment variable to decide worker module.
@@ -76,6 +90,14 @@ sub new { # normal mode
 
 }
 
+sub csv {
+    if (@_ && ref $_[0] eq __PACKAGE__ or ref $_[0] eq __PACKAGE__->backend) {
+        splice @_, 0, 0, "csv";
+    }
+    my $backend = __PACKAGE__->backend;
+    no strict 'refs';
+    &{"$backend\::csv"}(@_);
+}
 
 sub require_xs_version { $XS_Version; }
 
@@ -152,7 +174,7 @@ This section is taken from Text::CSV_XS.
                 headers => "auto");   # as array of hash
 
  # Write array of arrays as csv file
- csv (in => $aoa, out => "file.csv", sep_char=> ";");
+ csv (in => $aoa, out => "file.csv", sep_char => ";");
 
  # Only show lines where "code" is odd
  csv (in => "data.csv", filter => { code => sub { $_ % 2 }});
@@ -428,7 +450,7 @@ If instead you want to escape the  L<C<quote_char>|/quote_char> by doubling
 it you will need to also change the  C<escape_char>  to be the same as what
 you have changed the L<C<quote_char>|/quote_char> to.
 
-Setting C<escape_char> to <undef> or C<""> will disable escaping completely
+Setting C<escape_char> to C<undef> or C<""> will completely disable escapes
 and is greatly discouraged. This will also disable C<escape_null>.
 
 The escape character can not be equal to the separation character.
@@ -460,16 +482,86 @@ of fields than the previous row will cause the parser to throw error 2014.
 =head3 skip_empty_rows
 
  my $csv = Text::CSV->new ({ skip_empty_rows => 1 });
-         $csv->skip_empty_rows (0);
+         $csv->skip_empty_rows ("eof");
  my $f = $csv->skip_empty_rows;
 
-If this attribute is set to C<1>,  any row that has an  L</eol> immediately
-following the start of line will be skipped.  Default behavior is to return
-one single empty field.
+This attribute defines the behavior for empty rows:  an L</eol> immediately
+following the start of line. Default behavior is to return one single empty
+field.
 
-This attribute is only used in parsing.
+This attribute is only used in parsing.  This attribute is ineffective when
+using L</parse> and L</fields>.
+
+Possible values for this attribute are
+
+=over 2
+
+=item 0 | undef
+
+ my $csv = Text::CSV->new ({ skip_empty_rows => 0 });
+ $csv->skip_empty_rows (undef);
+
+No special action is taken. The result will be one single empty field.
+
+=item 1 | "skip"
+
+ my $csv = Text::CSV->new ({ skip_empty_rows => 1 });
+ $csv->skip_empty_rows ("skip");
+
+The row will be skipped.
+
+=item 2 | "eof" | "stop"
+
+ my $csv = Text::CSV->new ({ skip_empty_rows => 2 });
+ $csv->skip_empty_rows ("eof");
+
+The parsing will stop as if an L</eof> was detected.
+
+=item 3 | "die"
+
+ my $csv = Text::CSV->new ({ skip_empty_rows => 3 });
+ $csv->skip_empty_rows ("die");
+
+The parsing will stop.  The internal error code will be set to 2015 and the
+parser will C<die>.
+
+=item 4 | "croak"
+
+ my $csv = Text::CSV->new ({ skip_empty_rows => 4 });
+ $csv->skip_empty_rows ("croak");
+
+The parsing will stop.  The internal error code will be set to 2015 and the
+parser will C<croak>.
+
+=item 5 | "error"
+
+ my $csv = Text::CSV->new ({ skip_empty_rows => 5 });
+ $csv->skip_empty_rows ("error");
+
+The parsing will fail.  The internal error code will be set to 2015.
+
+=item callback
+
+ my $csv = Text::CSV->new ({ skip_empty_rows => sub { [] } });
+ $csv->skip_empty_rows (sub { [ 42, $., undef, "empty" ] });
+
+The callback is invoked and its result used instead.  If you want the parse
+to stop after the callback, make sure to return a false value.
+
+The returned value from the callback should be an array-ref. Any other type
+will cause the parse to stop, so these are equivalent in behavior:
+
+ csv (in => $fh, skip_empty_rows => "stop");
+ csv (in => $fh. skip_empty_rows => sub { 0; });
+
+=back
+
+Without arguments, the current value is returned: C<0>, C<1>, C<eof>, C<die>,
+C<croak> or the callback.
 
 =head3 formula_handling
+
+Alias for L</formula>
 
 =head3 formula
 
@@ -784,7 +876,7 @@ quoted, see L</blank_is_undef>). See also L<C<always_quote>|/always_quote>.
 
 By default,  all "unsafe" bytes inside a string cause the combined field to
 be quoted.  By setting this attribute to C<0>, you can disable that trigger
-for bytes >= C<0x7F>.
+for bytes C<< >= 0x7F >>.
 
 =head3 escape_null
 
@@ -1083,7 +1175,8 @@ The L</string>, L</fields>, and L</status> methods are meaningless again.
 This will return a reference to a list of L<getline ($fh)|/getline> results.
 In this call, C<keep_meta_info> is disabled.  If C<$offset> is negative, as
 with C<splice>, only the last  C<abs ($offset)> records of C<$fh> are taken
-into consideration.
+into consideration. Parameters C<$offset> and C<$length> are expected to be
+integers. Non-integer values are interpreted as integer without check.
 
 Given a CSV file with 10 lines:
 
@@ -1165,7 +1258,7 @@ supposed to croak and set error 1500.
 =head2 fragment
 
 This function tries to implement RFC7111  (URI Fragment Identifiers for the
-text/csv Media Type) - http://tools.ietf.org/html/rfc7111
+text/csv Media Type) - https://datatracker.ietf.org/doc/html/rfc7111
 
  my $AoA = $csv->fragment ($fh, $spec);
 
@@ -1248,7 +1341,7 @@ C<cell=1,1-3,3;2,2-4,4;2,3;4,2> will return:
 
 =back
 
-L<RFC7111|http://tools.ietf.org/html/rfc7111> does  B<not>  allow different
+L<RFC7111|https://datatracker.ietf.org/doc/html/rfc7111> does  B<not>  allow different
 types of specs to be combined   (either C<row> I<or> C<col> I<or> C<cell>).
 Passing an invalid fragment specification will croak and set error 2013.
 
@@ -1568,13 +1661,19 @@ or fetch the current type settings with
 
 =item IV
 
+=item CSV_TYPE_IV
+
 Set field type to integer.
 
 =item NV
 
+=item CSV_TYPE_NV
+
 Set field type to numeric/float.
 
 =item PV
+
+=item CSV_TYPE_PV
 
 Set field type to string.
 
@@ -1604,13 +1703,31 @@ L</combine> method. The flags are bit-wise-C<or>'d like:
 
 =over 2
 
-=item C< >0x0001
+=item C<0x0001>
+
+=item C<CSV_FLAGS_IS_QUOTED>
 
 The field was quoted.
 
-=item C< >0x0002
+=item C<0x0002>
+
+=item C<CSV_FLAGS_IS_BINARY>
 
 The field was binary.
+
+=item C<0x0004>
+
+=item C<CSV_FLAGS_ERROR_IN_FIELD>
+
+The field was invalid.
+
+Currently only used when C<allow_loose_quotes> is active.
+
+=item C<0x0010>
+
+=item C<CSV_FLAGS_IS_MISSING>
+
+The field was missing.
 
 =back
 
@@ -1967,6 +2084,8 @@ When C<skip> is used, the header will not be included in the output.
 
  my $aoa = csv (in => $fh, headers => "skip");
 
+C<skip> is invalid/ignored in combinations with L<C<detect_bom>|/detect_bom>.
+
 =item auto
 
 If C<auto> is used, the first line of the C<CSV> source will be read as the
@@ -2195,6 +2314,19 @@ This attribute can be abbreviated to C<kh> or passed as C<keep_column_names>.
 
 This attribute implies a default of C<auto> for the C<headers> attribute.
 
+The headers can also be kept internally to keep stable header order:
+
+ csv (in      => csv (in => "file.csv", kh => "internal"),
+      out     => "new.csv",
+      kh      => "internal");
+
+where C<internal> can also be C<1>, C<yes>, or C<true>. This is similar to
+
+ my @h;
+ csv (in      => csv (in => "file.csv", kh => \@h),
+      out     => "new.csv",
+      headers => \@h);
+
 =head3 fragment
 
 Only output the fragment as defined in the L</fragment> method. This option
@@ -2217,7 +2349,9 @@ Combining all of them could give something like
 If C<sep_set> is set, the method L</header> is invoked on the opened stream
 to detect and set L<C<sep_char>|/sep_char> with the given set.
 
-C<sep_set> can be abbreviated to C<seps>.
+C<sep_set> can be abbreviated to C<seps>. If neither C<sep_set> not C<seps>
+is given, but C<sep> is defined, C<sep_set> defaults to C<[ sep ]>. This is
+only supported for perl version 5.10 and up.
 
 Note that as the  L</header> method is invoked,  its default is to also set
 the headers.
@@ -2797,6 +2931,11 @@ Invalid specification for URI L</fragment> specification.
 2014 "ENF - Inconsistent number of fields"
 
 Inconsistent number of fields under strict parsing.
+
+=item *
+2015 "ERW - Empty row"
+
+An empty row was not allowed.
 
 =item *
 2021 "EIQ - NL char inside quotes, binary off"

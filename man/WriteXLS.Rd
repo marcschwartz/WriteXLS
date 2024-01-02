@@ -253,7 +253,7 @@
   Excel 2007 Specifications and Limitations \url{https://support.microsoft.com/en-us/office/excel-specifications-and-limits-1672b34d-7043-467e-8e27-269d656771c3}
                                                  
   For Perl Unicode Issues
-  \url{https://www.ahinea.com/en/tech/perl-unicode-struggle.html} and/or
+  \url{https://ahinea.com/en/tech/perl-unicode-struggle.html} and/or
   \url{https://www.perl.com/pub/2012/04/perlunicook-standard-preamble.html/}
 }
 \seealso{

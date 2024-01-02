@@ -9,27 +9,49 @@ require 5.006001;
 
 use strict;
 use Exporter ();
-use vars qw($VERSION @ISA @EXPORT_OK);
+use vars qw($VERSION @ISA @EXPORT_OK %EXPORT_TAGS);
 use Carp;
 
-$VERSION = '2.01';
+$VERSION = '2.04';
 @ISA = qw(Exporter);
-@EXPORT_OK = qw(csv);
 
 sub PV  { 0 }
 sub IV  { 1 }
 sub NV  { 2 }
+
+sub CSV_TYPE_PV { PV }
+sub CSV_TYPE_IV { IV }
+sub CSV_TYPE_NV { NV }
 
 sub IS_QUOTED () { 0x0001; }
 sub IS_BINARY () { 0x0002; }
 sub IS_ERROR ()  { 0x0004; }
 sub IS_MISSING () { 0x0010; }
 
+sub CSV_FLAGS_IS_QUOTED      { IS_QUOTED }
+sub CSV_FLAGS_IS_BINARY      { IS_BINARY }
+sub CSV_FLAGS_ERROR_IN_FIELD { IS_ERROR }
+sub CSV_FLAGS_IS_MISSING     { IS_MISSING }
+
 sub HOOK_ERROR () { 0x0001; }
 sub HOOK_AFTER_PARSE () { 0x0002; }
 sub HOOK_BEFORE_PRINT () { 0x0004; }
 
 sub useIO_EOF () { 0x0010; }
+
+%EXPORT_TAGS = (
+    CONSTANTS => [qw(
+        CSV_FLAGS_IS_QUOTED
+        CSV_FLAGS_IS_BINARY
+        CSV_FLAGS_ERROR_IN_FIELD
+        CSV_FLAGS_IS_MISSING
+
+        CSV_TYPE_PV
+        CSV_TYPE_IV
+        CSV_TYPE_NV
+    )],
+);
+@EXPORT_OK = (qw(csv PV IV NV), @{$EXPORT_TAGS{'CONSTANTS'}});
 
 my $ERRORS = {
         # Generic errors
@@ -61,6 +83,7 @@ my $ERRORS = {
         2012 => "EOF - End of data in parsing input stream",
         2013 => "ESP - Specification error for fragments RFC7111",
         2014 => "ENF - Inconsistent number of fields",
+        2015 => "ERW - Empty row",
 
         # EIQ - Error Inside Quotes
         2021 => "EIQ - NL char inside quotes, binary off",
@@ -217,6 +240,7 @@ my %def_attr = (
     _BOUND_COLUMNS		=> undef,
     _AHEAD			=> undef,
     _FORMULA_CB     => undef,
+    _EMPTROW_CB     => undef,
 
     ENCODING			=> undef,
 );
@@ -231,6 +255,7 @@ my %attr_alias = (
 
 my $last_new_error = Text::CSV_PP->SetDiag(0);
 my $ebcdic         = ord("A") == 0xC1;  # Faster than $Config{'ebcdic'}
+my @internal_kh;
 my $last_error;
 
 # NOT a method: is also used before bless
@@ -361,8 +386,9 @@ sub new {
     $last_new_error = Text::CSV_PP->SetDiag(0);
     defined $\ && !exists $attr{eol} and $self->{eol} = $\;
     bless $self, $class;
-    defined $self->{types} and $self->types ($self->{types});
-    defined $attr_formula  and $self->{formula} = _supported_formula($self, $attr_formula);
+    defined $self->{'types'}           and $self->types($self->{'types'});
+    defined $self->{'skip_empty_rows'} and $self->{'skip_empty_rows'} = _supported_skip_empty_rows($self, $self->{'skip_empty_rows'});
+    defined $attr_formula              and $self->{'formula'}         = _supported_formula($self, $attr_formula);
     $self;
 }
 
@@ -577,10 +603,33 @@ sub strict {
     $self->{strict};
     }
 
-sub skip_empty_rows {
+sub _supported_skip_empty_rows {
+    my ($self, $f) = @_;
+    defined $f or return 0;
+    if ($self && $f && ref $f && ref $f eq "CODE") {
+       $self->{'_EMPTROW_CB'} = $f;
+       return 6;
+       }
+    $f =~ m/^(?: 0 | undef         )$/xi ? 0 :
+    $f =~ m/^(?: 1 | skip          )$/xi ? 1 :
+    $f =~ m/^(?: 2 | eof   | stop  )$/xi ? 2 :
+    $f =~ m/^(?: 3 | die           )$/xi ? 3 :
+    $f =~ m/^(?: 4 | croak         )$/xi ? 4 :
+    $f =~ m/^(?: 5 | error         )$/xi ? 5 :
+    $f =~ m/^(?: 6 | cb            )$/xi ? 6 : do {
+       $self ||= "Text::CSV_PP";
+       croak ($self->_SetDiagInfo (1500, "skip_empty_rows '$f' is not supported"));
+       };
+    }
+
+ sub skip_empty_rows {
     my $self = shift;
-    @_ and $self->_set_attr_X ("skip_empty_rows", shift);
-    $self->{skip_empty_rows};
+    @_ and $self->_set_attr_N ("skip_empty_rows", _supported_skip_empty_rows ($self, shift));
+    my $ser = $self->{'skip_empty_rows'};
+    $ser == 6 or $self->{'_EMPTROW_CB'} = undef;
+    $ser <= 1 ? $ser : $ser == 2 ? "eof"   : $ser == 3 ? "die"   :
+                      $ser == 4 ? "croak" : $ser == 5 ? "error" :
+                      $self->{'_EMPTROW_CB'};
     }
 
 sub _SetDiagInfo {
@@ -1092,7 +1141,7 @@ sub header {
     ref $args{munge_column_names} eq "HASH" and
         @hdr = map { $args{munge_column_names}->{$_} || $_ } @hdr;
     my %hdr; $hdr{$_}++ for @hdr;
-    exists $hdr{""} and croak ($self->SetDiag (1012));
+    exists $hdr{''} and croak ($self->SetDiag (1012));
     unless (keys %hdr == @hdr) {
         croak ($self->_SetDiagInfo (1013, join ", " =>
             map { "$_ ($hdr{$_})" } grep { $hdr{$_} > 1 } keys %hdr));
@@ -1393,6 +1442,9 @@ sub _csv_attr {
         or croak $last_new_error;
     defined $form and $csv->formula ($form);
 
+    $kh && !ref $kh && $kh =~ m/^(?:1|yes|true|internal|auto)$/i and
+        $kh = \@internal_kh;
+
     return {
         csv  => $csv,
         attr => { %attr },
@@ -1432,6 +1484,9 @@ sub csv {
         }
 
     if ($c->{out} && !$c->{sink}) {
+       !$hdrs && ref $c->{'kh'} && $c->{'kh'} == \@internal_kh and
+            $hdrs = $c->{'kh'};
+
         if (ref $in eq "CODE") {
             my $hdr = 1;
             while (my $row = $in->($csv)) {
@@ -1449,7 +1504,7 @@ sub csv {
                     }
                 }
             }
-        elsif (ref $in->[0] eq "ARRAY") { # aoa
+        elsif (@{$in} == 0 or ref $in->[0] eq "ARRAY") { # aoa
             ref $hdrs and $csv->print ($fh, $hdrs);
             for (@{$in}) {
                 $c->{cboi} and $c->{cboi}->($csv, $_);
@@ -1460,7 +1515,7 @@ sub csv {
         else { # aoh
             my @hdrs = ref $hdrs ? @{$hdrs} : keys %{$in->[0]};
             defined $hdrs or $hdrs = "auto";
-            ref $hdrs || $hdrs eq "auto" and
+            ref $hdrs || $hdrs eq "auto" and @hdrs and
                 $csv->print ($fh, [ map { $hdr{$_} || $_ } @hdrs ]);
             for (@{$in}) {
                 local %_;
@@ -1478,16 +1533,21 @@ sub csv {
     my @row1;
     if (defined $c->{hd_s} || defined $c->{hd_b} || defined $c->{hd_m} || defined $c->{hd_c}) {
         my %harg;
-        defined $c->{hd_s} and $harg{set_set}            = $c->{hd_s};
-        defined $c->{hd_d} and $harg{detect_bom}         = $c->{hd_b};
-        defined $c->{hd_m} and $harg{munge_column_names} = $hdrs ? "none" : $c->{hd_m};
-        defined $c->{hd_c} and $harg{set_column_names}   = $hdrs ? 0      : $c->{hd_c};
+        !defined $c->{'hd_s'} &&  $c->{'attr'}{'sep_char'} and
+                 $c->{'hd_s'} = [ $c->{'attr'}{'sep_char'} ];
+        !defined $c->{'hd_s'} &&  $c->{'attr'}{'sep'} and
+                 $c->{'hd_s'} = [ $c->{'attr'}{'sep'} ];
+        defined  $c->{'hd_s'} and $harg{'sep_set'}            = $c->{'hd_s'};
+        defined  $c->{'hd_b'} and $harg{'detect_bom'}         = $c->{'hd_b'};
+        defined  $c->{'hd_m'} and $harg{'munge_column_names'} = $hdrs ? "none" : $c->{'hd_m'};
+        defined  $c->{'hd_c'} and $harg{'set_column_names'}   = $hdrs ? 0      : $c->{'hd_c'};
         @row1 = $csv->header ($fh, \%harg);
         my @hdr = $csv->column_names;
         @hdr and $hdrs ||= \@hdr;
         }
 
     if ($c->{kh}) {
+        @internal_kh = ();
         ref $c->{kh} eq "ARRAY" or croak ($csv->SetDiag (1501));
         $hdrs ||= "auto";
         }
@@ -1505,27 +1565,32 @@ sub csv {
 
     $c->{fltr} && grep m/\D/ => keys %{$c->{fltr}} and $hdrs ||= "auto";
     if (defined $hdrs) {
-        if (!ref $hdrs) {
-            if ($hdrs eq "skip") {
-                $csv->getline ($fh); # discard;
+        if (!ref $hdrs or ref $hdrs eq "CODE") {
+            my $h = $c->{'hd_b'}
+                ? [ $csv->column_names () ]
+                :   $csv->getline ($fh);
+            my $has_h = $h && @$h;
+
+            if (ref $hdrs) {
+                $has_h or return;
+                my $cr = $hdrs;
+                $hdrs  = [ map {  $cr->($hdr{$_} || $_) } @{$h} ];
+                }
+            elsif ($hdrs eq "skip") {
+                # discard;
                 }
             elsif ($hdrs eq "auto") {
-                my $h = $csv->getline ($fh) or return;
+                $has_h or return;
                 $hdrs = [ map {      $hdr{$_} || $_ } @$h ];
                 }
             elsif ($hdrs eq "lc") {
-                my $h = $csv->getline ($fh) or return;
+                $has_h or return;
                 $hdrs = [ map { lc ($hdr{$_} || $_) } @$h ];
                 }
             elsif ($hdrs eq "uc") {
-                my $h = $csv->getline ($fh) or return;
+                $has_h or return;
                 $hdrs = [ map { uc ($hdr{$_} || $_) } @$h ];
                 }
-            }
-        elsif (ref $hdrs eq "CODE") {
-            my $h  = $csv->getline ($fh) or return;
-            my $cr = $hdrs;
-            $hdrs  = [ map {  $cr->($hdr{$_} || $_) } @$h ];
             }
         $c->{kh} and $hdrs and @{$c->{kh}} = @$hdrs;
         }
@@ -1558,7 +1623,7 @@ sub csv {
           do {
             my @h = $csv->column_names ($hdrs);
             my %h; $h{$_}++ for @h;
-            exists $h{""} and croak ($csv->SetDiag (1012));
+            exists $h{''} and croak ($csv->SetDiag (1012));
             unless (keys %h == @h) {
                 croak ($csv->_SetDiagInfo (1013, join ", " =>
                     map { "$_ ($h{$_})" } grep { $h{$_} > 1 } keys %h));
@@ -2155,7 +2220,9 @@ sub ___parse { # cx_c_xsParse
             unless ($ctx->{useIO} & useIO_EOF) {
                 $self->__parse_error($ctx, 2014, $ctx->{used});
             }
-            $result = undef;
+            if ($last_error) {
+                $result = undef;
+            }
         }
     }
 
@@ -2252,6 +2319,8 @@ LOOP:
                 if ($waitingForField) {
                     if (!$spl && $ctx->{comment_str} && $ctx->{tmp} =~ /\A\Q$ctx->{comment_str}/) {
                         $ctx->{used} = $ctx->{size};
+                        $ctx->{fld_idx} = 0;
+                        $seenSomething = 0;
                         next LOOP;
                     }
                     $waitingForField = 0;
@@ -2507,12 +2576,46 @@ RESTART:
             elsif (defined $c and ($c eq "\012" or $c eq '' or (defined $eol and $c eq $eol and $eol ne "\015"))) { # EOL
     EOLX:
                 if ($fnum == 1 && $ctx->{flag} == 0 && (!$v_ref || $$v_ref eq '') && $ctx->{skip_empty_rows}) {
-                    $ctx->{fld_idx} = 0;
-                    $c = $self->__get($ctx, $src);
-                    if (!defined $c) {  # EOF
-                        $v_ref = undef;
-                        $waitingForField = 0;
-                        last LOOP;
+                    ### SkipEmptyRow
+                    my $ser = $ctx->{skip_empty_rows};
+                    if ($ser == 3) { $self->SetDiag(2015); die "Empty row\n"; }
+                    if ($ser == 4) { $self->SetDiag(2015); die "Empty row\n"; }
+                    if ($ser == 5) { $self->SetDiag(2015); return undef; }
+
+                    if ($ser <= 2) { # skip & eof
+                        $ctx->{fld_idx} = 0;
+                        $c = $self->__get($ctx, $src);
+                        if (!defined $c or $ser == 2) {  # EOF
+                            $v_ref = undef;
+                            $seenSomething = 0;
+                            if ($ser == 2) { return undef; }
+                            last LOOP;
+                        }
+                    }
+
+                    if ($ser == 6) {
+                        my $cb = $self->{_EMPTROW_CB};
+                        unless ($cb && ref $cb eq 'CODE') {
+                            return undef;  # A callback is wanted, but none found
+                        }
+                        local $_ = $v_ref;
+                        my $rv = $cb->();
+                        # Result should be a ref to a list.
+                        unless (ref $rv eq 'ARRAY') {
+                            return undef;
+                        }
+                        my $n = @$rv;
+                        if ($n <= 0) {
+                            return 1;
+                        }
+                        if ($ctx->{is_bound} && $ctx->{is_bound} < $n) {
+                            $n = $ctx->{is_bound} - 1;
+                        }
+                        for (my $i = 0; $i < $n; $i++) {
+                            my $rvi = $rv->[$i];
+                            $self->__push_value($ctx, \$rvi, $fields, $fflags, $ctx->{flag}, $fnum);
+                        }
+                        return 1;
                     }
                     goto RESTART;
                 }
@@ -2612,13 +2715,48 @@ RESTART:
                             $ctx->{used}--;
                             $ctx->{has_ahead} = 1;
                             if ($fnum == 1 && $ctx->{flag} == 0 && (!$v_ref or $$v_ref eq '') && $ctx->{skip_empty_rows}) {
-                                $ctx->{fld_idx} = 0;
-                                $c = $self->__get($ctx, $src);
-                                if (!defined $c) { # EOF
-                                    $v_ref = undef;
-                                    $waitingForField = 0;
-                                    last LOOP;
+                                ### SkipEmptyRow
+                                my $ser = $ctx->{skip_empty_rows};
+                                if ($ser == 3) { $self->SetDiag(2015); die "Empty row\n"; }
+                                if ($ser == 4) { $self->SetDiag(2015); die "Empty row\n"; }
+                                if ($ser == 5) { $self->SetDiag(2015); return undef; }
+
+                                if ($ser <= 2) { # skip & eof
+                                    $ctx->{fld_idx} = 0;
+                                    $c = $self->__get($ctx, $src);
+                                    if (!defined $c) { # EOF
+                                        $v_ref = undef;
+                                        $waitingForField = 1;
+                                        $seenSomething = 0;
+                                        last LOOP;
+                                    }
                                 }
+
+                                if ($ser == 6) {
+                                    my $cb = $self->{_EMPTROW_CB};
+                                    unless ($cb && ref $cb eq 'CODE') {
+                                        return undef;  # A callback is wanted, but none found
+                                    }
+                                    local $_ = $v_ref;
+                                    my $rv = $cb->();
+                                    # Result should be a ref to a list.
+                                    unless (ref $rv eq 'ARRAY') {
+                                        return undef;
+                                    }
+                                    my $n = @$rv;
+                                    if ($n <= 0) {
+                                        return 1;
+                                    }
+                                    if ($ctx->{is_bound} && $ctx->{is_bound} < $n) {
+                                        $n = $ctx->{is_bound} - 1;
+                                    }
+                                    for (my $i = 0; $i < $n; $i++) {
+                                        my $rvi = $rv->[$i];
+                                        $self->__push_value($ctx, \$rvi, $fields, $fflags, $ctx->{flag}, $fnum);
+                                    }
+                                    return 1;
+                                }
+
                                 $$v_ref = $c2;
                                 goto RESTART;
                             }
@@ -2670,12 +2808,45 @@ RESTART:
                             $ctx->{used}--;
                             $ctx->{has_ahead} = 1;
                             if ($fnum == 1 && $ctx->{flag} == 0 && (!$v_ref or $$v_ref eq '') && $ctx->{skip_empty_rows}) {
-                                $ctx->{fld_idx} = 0;
-                                $c = $self->__get($ctx, $src);
-                                if (!defined $c) { # EOL
-                                    $v_ref = undef;
-                                    $waitingForField = 0;
-                                    last LOOP;
+                                ### SKipEmptyRow
+                                my $ser = $ctx->{skip_empty_rows};
+                                if ($ser == 3) { $self->SetDiag(2015); die "Empty row\n"; }
+                                if ($ser == 4) { $self->SetDiag(2015); die "Empty row\n"; }
+                                if ($ser == 5) { $self->SetDiag(2015); return undef; }
+
+                                if ($ser <= 2) { # skip & eof
+                                    $ctx->{fld_idx} = 0;
+                                    $c = $self->__get($ctx, $src);
+                                    if (!defined $c) { # EOL
+                                        $v_ref = undef;
+                                        $seenSomething = 0;
+                                        last LOOP;
+                                    }
+                                }
+
+                                if ($ser == 6) {
+                                    my $cb = $self->{_EMPTROW_CB};
+                                    unless ($cb && ref $cb eq 'CODE') {
+                                        return undef;  # A callback is wanted, but none found
+                                    }
+                                    local $_ = $v_ref;
+                                    my $rv = $cb->();
+                                    # Result should be a ref to a list.
+                                    unless (ref $rv eq 'ARRAY') {
+                                        return undef;
+                                    }
+                                    my $n = @$rv;
+                                    if ($n <= 0) {
+                                        return 1;
+                                    }
+                                    if ($ctx->{is_bound} && $ctx->{is_bound} < $n) {
+                                        $n = $ctx->{is_bound} - 1;
+                                    }
+                                    for (my $i = 0; $i < $n; $i++) {
+                                        my $rvi = $rv->[$i];
+                                        $self->__push_value($ctx, \$rvi, $fields, $fflags, $ctx->{flag}, $fnum);
+                                    }
+                                    return 1;
                                 }
                                 goto RESTART;
                             }
@@ -2699,6 +2870,8 @@ RESTART:
                 if ($waitingForField) {
                     if (!$spl && $ctx->{comment_str} && $ctx->{tmp} =~ /\A$ctx->{comment_str}/) {
                         $ctx->{used} = $ctx->{size};
+                        $ctx->{fld_idx} = 0;
+                        $seenSomething = 0;
                         next LOOP;
                     }
                     if ($ctx->{allow_whitespace} and $self->__is_whitespace($ctx, $c)) {
@@ -2775,6 +2948,8 @@ RESTART:
 
     if ($v_ref) {
         $self->__push_value($ctx, $v_ref, $fields, $fflags, $ctx->{flag}, $fnum);
+    } elsif ($ctx->{flag} == 0 && $fnum == 1 && $ctx->{skip_empty_rows} == 1) {
+        return undef;
     }
     return 1;
 }
@@ -2907,7 +3082,7 @@ sub __is_whitespace {
 sub __push_value { # AV_PUSH (part of)
     my ($self, $ctx, $v_ref, $fields, $fflags, $flag, $fnum) = @_;
     utf8::encode($$v_ref) if $ctx->{utf8};
-    if ($ctx->{formula} && $$v_ref && substr($$v_ref, 0, 1) eq '=') {
+    if ($ctx->{formula} && defined $$v_ref && substr($$v_ref, 0, 1) eq '=') {
         my $value = $self->_formula($ctx, $$v_ref, $fnum);
         push @$fields, defined $value ? $value : undef;
         return;
@@ -3058,6 +3233,7 @@ sub SetDiag {
         $res = $self->_set_diag($ctx, $error);
 
     } else {
+        $last_error = $error;
         $res = $self->_sv_diag($error);
     }
     if (defined $errstr) {
@@ -3111,7 +3287,7 @@ This section is taken from Text::CSV_XS.
                 headers => "auto");   # as array of hash
 
  # Write array of arrays as csv file
- csv (in => $aoa, out => "file.csv", sep_char=> ";");
+ csv (in => $aoa, out => "file.csv", sep_char => ";");
 
  # Only show lines where "code" is odd
  csv (in => "data.csv", filter => { code => sub { $_ % 2 }});
@@ -3363,7 +3539,7 @@ If instead you want to escape the  L<C<quote_char>|/quote_char> by doubling
 it you will need to also change the  C<escape_char>  to be the same as what
 you have changed the L<C<quote_char>|/quote_char> to.
 
-Setting C<escape_char> to <undef> or C<""> will disable escaping completely
+Setting C<escape_char> to C<undef> or C<""> will completely disable escapes
 and is greatly discouraged. This will also disable C<escape_null>.
 
 The escape character can not be equal to the separation character.
@@ -3395,16 +3571,86 @@ of fields than the previous row will cause the parser to throw error 2014.
 =head3 skip_empty_rows
 
  my $csv = Text::CSV_PP->new ({ skip_empty_rows => 1 });
-         $csv->skip_empty_rows (0);
+         $csv->skip_empty_rows ("eof");
  my $f = $csv->skip_empty_rows;
 
-If this attribute is set to C<1>,  any row that has an  L</eol> immediately
-following the start of line will be skipped.  Default behavior is to return
-one single empty field.
+This attribute defines the behavior for empty rows:  an L</eol> immediately
+following the start of line. Default behavior is to return one single empty
+field.
 
-This attribute is only used in parsing.
+This attribute is only used in parsing.  This attribute is ineffective when
+using L</parse> and L</fields>.
+
+Possible values for this attribute are
+
+=over 2
+
+=item 0 | undef
+
+ my $csv = Text::CSV_PP->new ({ skip_empty_rows => 0 });
+ $csv->skip_empty_rows (undef);
+
+No special action is taken. The result will be one single empty field.
+
+=item 1 | "skip"
+
+ my $csv = Text::CSV_PP->new ({ skip_empty_rows => 1 });
+ $csv->skip_empty_rows ("skip");
+
+The row will be skipped.
+
+=item 2 | "eof" | "stop"
+
+ my $csv = Text::CSV_PP->new ({ skip_empty_rows => 2 });
+ $csv->skip_empty_rows ("eof");
+
+The parsing will stop as if an L</eof> was detected.
+
+=item 3 | "die"
+
+ my $csv = Text::CSV_PP->new ({ skip_empty_rows => 3 });
+ $csv->skip_empty_rows ("die");
+
+The parsing will stop.  The internal error code will be set to 2015 and the
+parser will C<die>.
+
+=item 4 | "croak"
+
+ my $csv = Text::CSV_PP->new ({ skip_empty_rows => 4 });
+ $csv->skip_empty_rows ("croak");
+
+The parsing will stop.  The internal error code will be set to 2015 and the
+parser will C<croak>.
+
+=item 5 | "error"
+
+ my $csv = Text::CSV_PP->new ({ skip_empty_rows => 5 });
+ $csv->skip_empty_rows ("error");
+
+The parsing will fail.  The internal error code will be set to 2015.
+
+=item callback
+
+ my $csv = Text::CSV_PP->new ({ skip_empty_rows => sub { [] } });
+ $csv->skip_empty_rows (sub { [ 42, $., undef, "empty" ] });
+
+The callback is invoked and its result used instead.  If you want the parse
+to stop after the callback, make sure to return a false value.
+
+The returned value from the callback should be an array-ref. Any other type
+will cause the parse to stop, so these are equivalent in behavior:
+
+ csv (in => $fh, skip_empty_rows => "stop");
+ csv (in => $fh. skip_empty_rows => sub { 0; });
+
+=back
+
+Without arguments, the current value is returned: C<0>, C<1>, C<eof>, C<die>,
+C<croak> or the callback.
 
 =head3 formula_handling
+
+Alias for L</formula>
 
 =head3 formula
 
@@ -3719,7 +3965,7 @@ quoted, see L</blank_is_undef>). See also L<C<always_quote>|/always_quote>.
 
 By default,  all "unsafe" bytes inside a string cause the combined field to
 be quoted.  By setting this attribute to C<0>, you can disable that trigger
-for bytes >= C<0x7F>.
+for bytes C<< >= 0x7F >>.
 
 =head3 escape_null
 
@@ -4018,7 +4264,8 @@ The L</string>, L</fields>, and L</status> methods are meaningless again.
 This will return a reference to a list of L<getline ($fh)|/getline> results.
 In this call, C<keep_meta_info> is disabled.  If C<$offset> is negative, as
 with C<splice>, only the last  C<abs ($offset)> records of C<$fh> are taken
-into consideration.
+into consideration. Parameters C<$offset> and C<$length> are expected to be
+integers. Non-integer values are interpreted as integer without check.
 
 Given a CSV file with 10 lines:
 
@@ -4100,7 +4347,7 @@ supposed to croak and set error 1500.
 =head2 fragment
 
 This function tries to implement RFC7111  (URI Fragment Identifiers for the
-text/csv Media Type) - http://tools.ietf.org/html/rfc7111
+text/csv Media Type) - https://datatracker.ietf.org/doc/html/rfc7111
 
  my $AoA = $csv->fragment ($fh, $spec);
 
@@ -4183,7 +4430,7 @@ C<cell=1,1-3,3;2,2-4,4;2,3;4,2> will return:
 
 =back
 
-L<RFC7111|http://tools.ietf.org/html/rfc7111> does  B<not>  allow different
+L<RFC7111|https://datatracker.ietf.org/doc/html/rfc7111> does  B<not>  allow different
 types of specs to be combined   (either C<row> I<or> C<col> I<or> C<cell>).
 Passing an invalid fragment specification will croak and set error 2013.
 
@@ -4503,13 +4750,19 @@ or fetch the current type settings with
 
 =item IV
 
+=item CSV_TYPE_IV
+
 Set field type to integer.
 
 =item NV
 
+=item CSV_TYPE_NV
+
 Set field type to numeric/float.
 
 =item PV
+
+=item CSV_TYPE_PV
 
 Set field type to string.
 
@@ -4539,13 +4792,31 @@ L</combine> method. The flags are bit-wise-C<or>'d like:
 
 =over 2
 
-=item C< >0x0001
+=item C<0x0001>
+
+=item C<CSV_FLAGS_IS_QUOTED>
 
 The field was quoted.
 
-=item C< >0x0002
+=item C<0x0002>
+
+=item C<CSV_FLAGS_IS_BINARY>
 
 The field was binary.
+
+=item C<0x0004>
+
+=item C<CSV_FLAGS_ERROR_IN_FIELD>
+
+The field was invalid.
+
+Currently only used when C<allow_loose_quotes> is active.
+
+=item C<0x0010>
+
+=item C<CSV_FLAGS_IS_MISSING>
+
+The field was missing.
 
 =back
 
@@ -4883,6 +5154,8 @@ When C<skip> is used, the header will not be included in the output.
 
  my $aoa = csv (in => $fh, headers => "skip");
 
+C<skip> is invalid/ignored in combinations with L<C<detect_bom>|/detect_bom>.
+
 =item auto
 
 If C<auto> is used, the first line of the C<CSV> source will be read as the
@@ -5111,6 +5384,19 @@ This attribute can be abbreviated to C<kh> or passed as C<keep_column_names>.
 
 This attribute implies a default of C<auto> for the C<headers> attribute.
 
+The headers can also be kept internally to keep stable header order:
+
+ csv (in      => csv (in => "file.csv", kh => "internal"),
+      out     => "new.csv",
+      kh      => "internal");
+
+where C<internal> can also be C<1>, C<yes>, or C<true>. This is similar to
+
+ my @h;
+ csv (in      => csv (in => "file.csv", kh => \@h),
+      out     => "new.csv",
+      headers => \@h);
+
 =head3 fragment
 
 Only output the fragment as defined in the L</fragment> method. This option
@@ -5133,7 +5419,9 @@ Combining all of them could give something like
 If C<sep_set> is set, the method L</header> is invoked on the opened stream
 to detect and set L<C<sep_char>|/sep_char> with the given set.
 
-C<sep_set> can be abbreviated to C<seps>.
+C<sep_set> can be abbreviated to C<seps>. If neither C<sep_set> not C<seps>
+is given, but C<sep> is defined, C<sep_set> defaults to C<[ sep ]>. This is
+only supported for perl version 5.10 and up.
 
 Note that as the  L</header> method is invoked,  its default is to also set
 the headers.
@@ -5713,6 +6001,11 @@ Invalid specification for URI L</fragment> specification.
 2014 "ENF - Inconsistent number of fields"
 
 Inconsistent number of fields under strict parsing.
+
+=item *
+2015 "ERW - Empty row"
+
+An empty row was not allowed.
 
 =item *
 2021 "EIQ - NL char inside quotes, binary off"

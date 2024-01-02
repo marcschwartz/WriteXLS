@@ -7,7 +7,7 @@ package Excel::Writer::XLSX::Chart;
 #
 # Used in conjunction with Excel::Writer::XLSX.
 #
-# Copyright 2000-2021, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2023, John McNamara, jmcnamara@cpan.org
 #
 # Documentation after __END__
 #
@@ -27,7 +27,7 @@ use Excel::Writer::XLSX::Utility qw(xl_cell_to_rowcol
   quote_sheetname );
 
 our @ISA     = qw(Excel::Writer::XLSX::Package::XMLwriter);
-our $VERSION = '1.09';
+our $VERSION = '1.11';
 
 
 ###############################################################################
@@ -470,7 +470,7 @@ sub set_style {
     my $self = shift;
     my $style_id = defined $_[0] ? $_[0] : 2;
 
-    if ( $style_id < 0 || $style_id > 48 ) {
+    if ( $style_id < 1 || $style_id > 48 ) {
         $style_id = 2;
     }
 
@@ -8390,7 +8390,7 @@ The following properties can be set for C<line> formats in a chart.
     transparency
 
 
-The C<none> property is uses to turn the C<line> off (it is always on by default except in Scatter charts). This is useful if you wish to plot a series with markers but without a line.
+The C<none> property is used to turn the C<line> off (it is always on by default except in Scatter charts). This is useful if you wish to plot a series with markers but without a line.
 
     $chart->add_series(
         values     => '=Sheet1!$B$1:$B$5',
@@ -9168,6 +9168,6 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-Copyright MM-MMXXI, John McNamara.
+Copyright MM-MMXXIII, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.
