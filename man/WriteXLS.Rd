@@ -10,6 +10,7 @@
            Encoding = c("UTF-8", "latin1", "cp1252"), AllText = FALSE,
            row.names = FALSE, col.names = TRUE,
            AdjWidth = FALSE, AutoFilter = FALSE, BoldHeaderRow = FALSE,
+           ReadOnly = FALSE,
            na = "",
            FreezeRow = 0, FreezeCol = 0,
            envir = parent.frame())
@@ -52,6 +53,9 @@
         support this feature.}
   \item{BoldHeaderRow}{If \code{TRUE}, will apply a bold font to the
         header row for each worksheet.}
+  \item{ReadOnly}{If \code{TRUE}, each worksheet will be set to Read Only
+       (Protected mode) to prevent inadvertent changes to the contents when
+       the file is opened in Excel or a compatible application. See Details.}
   \item{na}{The string to use for missing values in the data. Defaults
     to ""}
   \item{FreezeRow}{Rows including this row and above this row will be
@@ -196,10 +200,17 @@
   also included to be able to handle any \emph{comment} attributes, and you will observe a repeat of either line 0,
   if \code{col.names = FALSE} or line 1, if \code{col.names = TRUE}, as a result. The actual source data frame
   content will begin on the subsequent line.
+
+  If \code{ReadOnly = TRUE}, each worksheet will be set to Protected (read only) mode to prevent the inadvertent
+  editing of the contents when the file is opened in Excel or a compatible application. This is not the same as
+  the file being password protected and encrypted, which is not supported. The contents of the worksheets will be
+  readable and copyable, but not editable. Each worksheet will show a lock icon on the worksheet tab. Protected mode
+  can be disabled by the user by right-clicking on each worksheet tab and selecting 'Unprotect Sheet' in the menu.
   
   Note that as of version 6.0.0, more robust handling of embedded newline ('\\n') and carriage return ('\\r')
   characters, double quotes, and two character sequences of a backslash character ('\\') followed by another character,
-  within a data frame value has been implemented. 
+  within a data frame value has been implemented.
+  
   If there any issues parsing the lines in the CSV file, such that the number of fields in the current line is different
   than the prior line, perhaps due to atypical character content, an error will be issued. If this occurs, you may wish
   to set \code{verbose = TRUE} in order to obtain additional debugging information to help identify where in the CSV
@@ -210,9 +221,9 @@
   data frame content that includes escaped character sequences or other atypical content, and to consider pre-processing
   these as may be apropos, prior to using this function.
    
-  Note that arguments \code{AdjWidth}, \code{AutoFilter},
-  \code{BoldHeaderRow}, \code{FreezeRow}, \code{FreezeCol}, \code{Encoding}, 
-  \code{row.names}, \code{col.names} and \code{AllText} will apply to ALL worksheets exported.
+  Note that arguments \code{AdjWidth}, \code{AutoFilter}, \code{BoldHeaderRow}, \code{ReadOnly}, \code{FreezeRow},
+  \code{FreezeCol}, \code{Encoding}, \code{row.names}, \code{col.names} and \code{AllText} will apply to ALL
+  worksheets exported.
 }
 \value{
   TRUE if the Excel file was successfully created.
@@ -264,7 +275,7 @@
   if (testPerl(verbose = FALSE))
   {
     ## Examples using built-in data frames
-    ## Create XLS (Excel 2003) files 
+    ## Create XLSX (Excel 2007) files 
     WriteXLS("iris", "iris.xlsx")
 
     WriteXLS(c("iris", "infert", "esoph"), "Example.xlsx")
@@ -277,7 +288,6 @@
     ## upper right hand corner of the cell. Click on the cell
     ## or place the cursor over the cell to see the pop-up
     ## containing the comment text.
-    ## Create an XLSX (Excel 2007) file
     ## Adjust the column widths
     ## Bold the header row
     comment(iris$Sepal.Length) <- "Length of the sepals (cm)"

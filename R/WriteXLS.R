@@ -22,6 +22,7 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
                      Encoding = c("UTF-8", "latin1", "cp1252"), AllText = FALSE,
                      row.names = FALSE, col.names = TRUE,
                      AdjWidth = FALSE, AutoFilter = FALSE, BoldHeaderRow = FALSE,
+                     ReadOnly = FALSE,
                      na = "", FreezeRow = 0, FreezeCol = 0,
                      envir = parent.frame())
 {
@@ -262,6 +263,7 @@ WriteXLS <- function(x, ExcelFileName = "R.xls", SheetNames = NULL, perl = "perl
                " --AdjWidth ", AdjWidth,
                " --AutoFilter ", AutoFilter,
                " --BoldHeaderRow ", BoldHeaderRow,
+               " --ReadOnly ", ReadOnly,
                " --FreezeRow ", FreezeRow,
                " --FreezeCol ", FreezeCol,
                " --Encoding ", Encoding,

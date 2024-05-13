@@ -12,16 +12,17 @@
 # Public License Version 2, June 1991.  
 
 
-# Called as: WriteXLS.pl [--CSVpath] [--verbose] [--AdjWidth] [--AutoFilter] [--BoldHeaderRow] [-FreezeRow] [--FreezeCol] [--Encoding] [--AllText] ExcelFileName
+# Called as: WriteXLS.pl [--CSVpath] [--verbose] [--AdjWidth] [--AutoFilter] [--BoldHeaderRow] [--ReadOnly] [--FreezeRow] [--FreezeCol] [--Encoding] [--AllText] ExcelFileName
 
 # CSVpath = Path to CSV Files. Defaults to '.'
 # verbose = Output status messages. TRUE or FALSE. Defaults to FALSE
 # Adj.Width = Adjust column widths based upon longest entry in each column. Defaults to FALSE
 # AutoFilter = Set autofilter for each sheet. Defaults to FALSE
-# Bold.Header.Row = Set bold font for header row. Defaults to FALSE
+# BoldHeaderRow = Set bold font for header row. Defaults to FALSE
+# ReadOnly = Set each worksheet to read only (protected) mode. Defaults to FALSE
 # FreezeRow = Set row to freeze for scrolling
 # FreezeCol = Set col to freeze for scrolling
-# Encoding = character encoding. Either "UTF-8" (default) or "latin1" (aka "iso-8859-1") or "cp1252" (Windows)
+# Encoding = character encoding. "UTF-8" (default) or "latin1" (aka "iso-8859-1") or "cp1252" (Windows)
 
 # Excel::Writer:XLSX
 # https://github.com/jmcnamara/excel-writer-xlsx
@@ -52,6 +53,7 @@ my $verbose = "FALSE";
 my $AdjWidth = "FALSE";
 my $AutoFilter = "FALSE";
 my $BoldHeaderRow = "FALSE";
+my $ReadOnly = "FALSE";
 my $FreezeRow = 0;
 my $FreezeCol = 0;
 my $Encoding = "UTF-8";
@@ -62,6 +64,7 @@ GetOptions ('CSVpath=s' => \$CSVPath,
             'AdjWidth=s' => \$AdjWidth,
             'AutoFilter=s' => \$AutoFilter,
             'BoldHeaderRow=s' => \$BoldHeaderRow,
+            'ReadOnly=s' => \$ReadOnly,
             'FreezeRow=i' => \$FreezeRow,
             'FreezeCol=i' => \$FreezeCol,
 	    'Encoding=s' => \$Encoding,
@@ -402,6 +405,10 @@ foreach my $FileName (@FileNames) {
 
   if ($AutoFilter eq "TRUE") {
     $WorkSheet->autofilter(0, 0, $Row - 1, $Column - 1);
+  }
+
+  if ($ReadOnly eq "TRUE") {
+    $WorkSheet->protect();
   }
 
   if (($FreezeRow > 0) || ($FreezeCol > 0)) {
