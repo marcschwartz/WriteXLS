@@ -1,5 +1,5 @@
 INSTALLING PERL AND RELATED MODULES TO USE WriteXLS
-January 2, 2024
+July 20, 2024
 
 
 BASIC REQUIREMENTS
@@ -20,7 +20,7 @@ BASIC REQUIREMENTS
 
 GENERAL COMMENTS
 
-As of this writing, the current release version of Perl is 5.38.2, however not all computer
+As of this writing, the current release version of Perl is 5.40.0, however not all computer
 systems are using this version. Some will be using earlier distributions of Perl.
 
 File::Basename and Getopt::Long are "Core" Perl modules and should be part of a standard Perl installation,
@@ -107,9 +107,18 @@ available from:
 
   http://strawberryperl.com/
 
-If you should need a C compiler and related tools for Windows, please see the Rtools package at:
+If you should need a C compiler and related tools for Windows, please see the RTools package at:
 
   https://cran.r-project.org/bin/windows/Rtools/
+
+Note that if you have installed RTools version 4.x or greater, these tools now include Perl as distributed by the MSYS2 project 
+(https://www.msys2.org). As this version of Perl is based upon Cygwin, which emulates Linux/Unix behavior, the
+default text file line ending character sequence is a LF (linefeed), rather than CRLF (carriage return/linefeed),
+the latter being the default on Windows. Beginning with WriteXLS version 6.7.0, this difference is better handled
+to allow for the use of the RTools Perl distribution. If you would prefer to use a different Perl distribution, 
+use the 'perl' argument in WriteXLS() to point to the perl binary for the other Perl distribution, as the RTools
+distribution will otherwise be used by default within R. You can run the testPerl() function in WriteXLS to see which
+Perl binary is found and is being used.
 
 
 LINUX

@@ -210,6 +210,12 @@
   Note that as of version 6.0.0, more robust handling of embedded newline ('\\n') and carriage return ('\\r')
   characters, double quotes, and two character sequences of a backslash character ('\\') followed by another character,
   within a data frame value has been implemented.
+
+  If you have installed the RTools utilities under Windows from CRAN, version 4.x or greater, RTools includes a Cygwin
+  based Perl distribution from the MSYS2 project, which emulates Linux/Unix behavior and will be used by default.
+  This causes a conflict in reading the temporary text files created here, as Linux/Unix uses LF character for line endings,
+  rather than a CRLF character sequence, which is the default under Windows, and will result in an error. Starting with
+  WriteXLS version 6.7.0, this has been resolved, if you should elect to use the RTools Perl distribution.
   
   If there any issues parsing the lines in the CSV file, such that the number of fields in the current line is different
   than the prior line, perhaps due to atypical character content, an error will be issued. If this occurs, you may wish

@@ -82,6 +82,13 @@ if ($Encoding eq "UTF-8") {
   $Encode = "<:encoding(cp1252)";
 }
 
+# Special case handling for Perl as installed
+# by RTools 4.x, which is from MSYS2 and is Cygwin
+# based. Thus, change newline handling from LF (Cygwin) to
+# CRLF (Windows) by appending to $Encode.
+# OS ($^O) will show 'msys' rather than Windows
+$Encode .= ":crlf" if $^O eq 'msys';
+
 
 
 
