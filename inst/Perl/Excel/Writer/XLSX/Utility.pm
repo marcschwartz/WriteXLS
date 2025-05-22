@@ -7,7 +7,9 @@ package Excel::Writer::XLSX::Utility;
 #
 # Used in conjunction with Excel::Writer::XLSX
 #
-# Copyright 2000-2023, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2024, John McNamara, jmcnamara@cpan.org
+#
+# SPDX-License-Identifier: Artistic-1.0-Perl OR GPL-1.0-or-later
 #
 # Documentation after __END__
 #
@@ -20,8 +22,12 @@ use Exporter;
 use warnings;
 use autouse 'Date::Calc'  => qw(Delta_DHMS Decode_Date_EU Decode_Date_US);
 use autouse 'Date::Manip' => qw(ParseDate Date_Init);
+use Carp;
+use Digest::MD5 qw(md5_hex);
+use File::Basename 'fileparse';
 
-our $VERSION = '1.11';
+
+our $VERSION = '1.14';
 
 # Row and column functions
 my @rowcol = qw(
@@ -50,7 +56,7 @@ my @dates = qw(
 
 our @ISA         = qw(Exporter);
 our @EXPORT_OK   = ();
-our @EXPORT      = ( @rowcol, @dates, 'quote_sheetname' );
+our @EXPORT      = ( @rowcol, @dates, 'quote_sheetname', 'get_image_properties' );
 our %EXPORT_TAGS = (
     rowcol => \@rowcol,
     dates  => \@dates
@@ -212,21 +218,95 @@ sub xl_range_formula {
 #
 # Sheetnames used in references should be quoted if they contain any spaces,
 # special characters or if they look like something that isn't a sheet name.
+# The rules are shown inline below.
 #
 sub quote_sheetname {
 
-    my $sheetname = $_[0];
+    my $sheetname     = shift;
+    my $uc_sheetname  = uc( $sheetname );
+    my $needs_quoting = 0;
+    my $row_max       = 1_048_576;
+    my $col_max       = 16_384;
 
-    # Use Excel's conventions and quote the sheet name if it contains any
-    # non-word character or if it isn't already quoted.
-    if ( $sheetname =~ /\W/ && $sheetname !~ /^'/ ) {
+    # Don't quote sheetname if it is already quoted by the user.
+    if ( $sheetname !~ /^'/ ) {
+
+
+        # Rule 1. Sheet names that contain anything other than \w and "."
+        # characters must be quoted.
+        if ( $sheetname =~ /[^\w\.\p{Emoticons}]/ ) {
+            $needs_quoting = 1;
+        }
+
+        # Rule 2. Sheet names that start with a digit or "." must be quoted.
+        elsif ( $sheetname =~ /^[\d\.\p{Emoticons}]/ ) {
+            $needs_quoting = 1;
+        }
+
+        # Rule 3. Sheet names must not be a valid A1 style cell reference.
+        # Valid means that the row and column values are within Excel limits.
+        elsif ( $uc_sheetname =~ /^([A-Z]{1,3}\d+)$/ ) {
+            my ( $row, $col ) = xl_cell_to_rowcol( $1 );
+
+            if ( $row >= 0 && $row < $row_max && $col >= 0 && $col < $col_max )
+            {
+                $needs_quoting = 1;
+            }
+        }
+
+        # Rule 4. Sheet names must not *start* with a valid RC style cell
+        # reference. Valid means that the row and column values are within
+        # Excel limits.
+
+        # Rule 4a. Check for some single R/C references.
+        elsif ($uc_sheetname eq "R"
+            || $uc_sheetname eq "C"
+            || $uc_sheetname eq "RC" )
+        {
+            $needs_quoting = 1;
+
+        }
+
+        # Rule 4b. Check for C1 or RC1 style references. References without
+        # trailing characters (like C12345) are caught by Rule 3.
+        elsif ( $uc_sheetname =~ /^R?C(\d+)/ ) {
+            my $col = $1;
+            if ( $col > 0 && $col <= $col_max ) {
+                $needs_quoting = 1;
+            }
+        }
+
+        # Rule 4c. Check for R1C1 style references where both the number
+        # ranges are optional. Note that only 1 of the number ranges is
+        # required to be valid.
+        elsif ( $uc_sheetname =~ /^R(\d+)?C(\d+)?/ ) {
+            if ( defined $1 ) {
+                my $row = $1;
+                if ( $row > 0 && $row <= $row_max ) {
+                    $needs_quoting = 1;
+                }
+            }
+
+            if ( defined $2 ) {
+                my $col = $1;
+                if ( $col > 0 && $col <= $col_max ) {
+                    $needs_quoting = 1;
+                }
+            }
+        }
+    }
+
+
+    if ( $needs_quoting ) {
         # Double quote any single quotes.
         $sheetname =~ s/'/''/g;
         $sheetname = q(') . $sheetname . q(');
     }
 
+
     return $sheetname;
 }
+
 
 
 ###############################################################################
@@ -474,6 +554,282 @@ sub xl_string_pixel_width {
     }
 
     return $length;
+}
+
+
+
+###############################################################################
+#
+# get_image_properties()
+#
+# Extract information from the image file such as dimension, type, filename,
+# and extension. Also keep track of previously seen images to optimise out
+# any duplicates.
+#
+sub get_image_properties {
+
+    my $filename = shift;
+
+    my $type;
+    my $width;
+    my $height;
+    my $x_dpi = 96;
+    my $y_dpi = 96;
+    my $image_name;
+
+
+    ( $image_name ) = fileparse( $filename );
+
+    # Open the image file and import the data.
+    my $fh = FileHandle->new( $filename );
+    croak "Couldn't import $filename: $!" unless defined $fh;
+    binmode $fh;
+
+    # Slurp the file into a string and do some size calcs.
+    my $data = do { local $/; <$fh> };
+    my $size = length $data;
+    my $md5  = md5_hex($data);
+
+    if ( unpack( 'x A3', $data ) eq 'PNG' ) {
+
+        # Test for PNGs.
+        ( $type, $width, $height, $x_dpi, $y_dpi ) =
+          _process_png( $data, $filename );
+
+    }
+    elsif ( unpack( 'n', $data ) == 0xFFD8 ) {
+
+        # Test for JPEG files.
+        ( $type, $width, $height, $x_dpi, $y_dpi ) =
+          _process_jpg( $data, $filename );
+
+    }
+    elsif ( unpack( 'A4', $data ) eq 'GIF8' ) {
+
+        # Test for GIFs.
+        ( $type, $width, $height, $x_dpi, $y_dpi ) =
+          _process_gif( $data, $filename );
+
+    }
+    elsif ( unpack( 'A2', $data ) eq 'BM' ) {
+
+        # Test for BMPs.
+        ( $type, $width, $height ) = _process_bmp( $data, $filename );
+
+    }
+    else {
+        croak "Unsupported image format for file: $filename\n";
+    }
+
+    # Set a default dpi for images with 0 dpi.
+    $x_dpi = 96 if $x_dpi == 0;
+    $y_dpi = 96 if $y_dpi == 0;
+
+    $fh->close;
+
+    return ( $type, $width, $height, $image_name, $x_dpi, $y_dpi, $md5 );
+}
+
+
+###############################################################################
+#
+# _process_png()
+#
+# Extract width and height information from a PNG file.
+#
+sub _process_png {
+
+    my $data     = $_[0];
+    my $filename = $_[1];
+
+    my $type   = 'png';
+    my $width  = 0;
+    my $height = 0;
+    my $x_dpi  = 96;
+    my $y_dpi  = 96;
+
+    my $offset      = 8;
+    my $data_length = length $data;
+
+    # Search through the image data to read the height and width in the
+    # IHDR element. Also read the DPI in the pHYs element.
+    while ( $offset < $data_length ) {
+
+        my $length = unpack "N",  substr $data, $offset + 0, 4;
+        my $type   = unpack "A4", substr $data, $offset + 4, 4;
+
+        if ( $type eq "IHDR" ) {
+            $width  = unpack "N", substr $data, $offset + 8,  4;
+            $height = unpack "N", substr $data, $offset + 12, 4;
+        }
+
+        if ( $type eq "pHYs" ) {
+            my $x_ppu = unpack "N", substr $data, $offset + 8,  4;
+            my $y_ppu = unpack "N", substr $data, $offset + 12, 4;
+            my $units = unpack "C", substr $data, $offset + 16, 1;
+
+            if ( $units == 1 ) {
+                $x_dpi = $x_ppu * 0.0254;
+                $y_dpi = $y_ppu * 0.0254;
+            }
+        }
+
+        $offset = $offset + $length + 12;
+
+        last if $type eq "IEND";
+    }
+
+    if ( not defined $height ) {
+        croak "$filename: no size data found in png image.\n";
+    }
+
+    return ( $type, $width, $height, $x_dpi, $y_dpi );
+}
+
+
+###############################################################################
+#
+# _process_bmp()
+#
+# Extract width and height information from a BMP file.
+#
+# Most of the checks came from old Spreadsheet::WriteExcel code.
+#
+sub _process_bmp {
+
+    my $data     = $_[0];
+    my $filename = $_[1];
+    my $type     = 'bmp';
+
+
+    # Check that the file is big enough to be a bitmap.
+    if ( length $data <= 0x36 ) {
+        croak "$filename doesn't contain enough data.";
+    }
+
+
+    # Read the bitmap width and height. Verify the sizes.
+    my ( $width, $height ) = unpack "x18 V2", $data;
+
+    if ( $width > 0xFFFF ) {
+        croak "$filename: largest image width $width supported is 65k.";
+    }
+
+    if ( $height > 0xFFFF ) {
+        croak "$filename: largest image height supported is 65k.";
+    }
+
+    # Read the bitmap planes and bpp data. Verify them.
+    my ( $planes, $bitcount ) = unpack "x26 v2", $data;
+
+    if ( $bitcount != 24 ) {
+        croak "$filename isn't a 24bit true color bitmap.";
+    }
+
+    if ( $planes != 1 ) {
+        croak "$filename: only 1 plane supported in bitmap image.";
+    }
+
+
+    # Read the bitmap compression. Verify compression.
+    my $compression = unpack "x30 V", $data;
+
+    if ( $compression != 0 ) {
+        croak "$filename: compression not supported in bitmap image.";
+    }
+
+    return ( $type, $width, $height );
+}
+
+
+###############################################################################
+#
+# _process_jpg()
+#
+# Extract width and height information from a JPEG file.
+#
+sub _process_jpg {
+
+    my $data     = $_[0];
+    my $filename = $_[1];
+    my $type     = 'jpeg';
+    my $x_dpi    = 96;
+    my $y_dpi    = 96;
+    my $width;
+    my $height;
+
+    my $offset      = 2;
+    my $data_length = length $data;
+
+    # Search through the image data to read the JPEG markers.
+    while ( $offset < $data_length ) {
+
+        my $marker = unpack "n", substr $data, $offset + 0, 2;
+        my $length = unpack "n", substr $data, $offset + 2, 2;
+
+        # Read the height and width in the 0xFFCn elements (except C4, C8 and
+        # CC which aren't SOF markers).
+        if (   ( $marker & 0xFFF0 ) == 0xFFC0
+            && $marker != 0xFFC4
+            && $marker != 0xFFCC )
+        {
+            $height = unpack "n", substr $data, $offset + 5, 2;
+            $width  = unpack "n", substr $data, $offset + 7, 2;
+        }
+
+        # Read the DPI in the 0xFFE0 element.
+        if ( $marker == 0xFFE0 ) {
+            my $units     = unpack "C", substr $data, $offset + 11, 1;
+            my $x_density = unpack "n", substr $data, $offset + 12, 2;
+            my $y_density = unpack "n", substr $data, $offset + 14, 2;
+
+            if ( $units == 1 ) {
+                $x_dpi = $x_density;
+                $y_dpi = $y_density;
+            }
+
+            if ( $units == 2 ) {
+                $x_dpi = $x_density * 2.54;
+                $y_dpi = $y_density * 2.54;
+            }
+        }
+
+        $offset = $offset + $length + 2;
+        last if $marker == 0xFFDA;
+    }
+
+    if ( not defined $height ) {
+        croak "$filename: no size data found in jpeg image.\n";
+    }
+
+    return ( $type, $width, $height, $x_dpi, $y_dpi );
+}
+
+
+###############################################################################
+#
+# _process_gif()
+#
+# Extract width and height information from a GIF file.
+#
+sub _process_gif {
+
+    my $data     = $_[0];
+    my $filename = $_[1];
+
+    my $type   = 'gif';
+    my $x_dpi  = 96;
+    my $y_dpi  = 96;
+
+    my $width  = unpack "v", substr $data, 6, 2;
+    my $height = unpack "v", substr $data, 8, 2;
+    print join ", ", ( $type, $width, $height, $x_dpi, $y_dpi, "\n" );
+
+    if ( not defined $height ) {
+        croak "$filename: no size data found in gif image.\n";
+    }
+
+    return ( $type, $width, $height, $x_dpi, $y_dpi );
 }
 
 
@@ -748,7 +1104,7 @@ This functions takes a cell reference string in A1 notation and decrements the c
 
 =head1 TIME AND DATE FUNCTIONS
 
-Dates and times in Excel are represented by real numbers, for example "Jan 1 2001 12:30 AM" is represented by the number 36892.521.
+Dates and times in Excel are represented by real numbers, for example "Jan 1 2001 12:30:14 PM" is represented by the number 36892.521.
 
 The integer part of the number stores the number of days since the epoch and the fractional part stores the percentage of the day in seconds.
 
@@ -756,7 +1112,7 @@ A date or time in Excel is like any other number. To display the number as a dat
 
     $date = xl_date_list( 2001, 1, 1, 12, 30 );
     $format->set_num_format( 'mmm d yyyy hh:mm AM/PM' );
-    $worksheet->write( 'A1', $date, $format );    # Jan 1 2001 12:30 AM
+    $worksheet->write( 'A1', $date, $format );    # Jan 1 2001 12:30 PM
 
 The date handling functions below are supplied for historical reasons. In the current version of the module it is easier to just use the C<write_date_time()> function to write dates or times. See the DATES AND TIME IN EXCEL section of the main L<Excel::Writer::XLSX> documentation for details.
 
@@ -829,7 +1185,7 @@ This function converts a date and time string into a number that represents an E
 
 The parsing is performed using the C<ParseDate()> function of the L<Date::Manip> module. Refer to the C<Date::Manip> documentation for further information about the date and time formats that can be parsed. In order to use this function you will probably have to initialise some C<Date::Manip> variables via the C<xl_parse_date_init()> function, see below.
 
-    xl_parse_date_init( "TZ=GMT", "DateFormat=non-US" );
+    xl_parse_date_init( "DateFormat=non-US" );
 
     $date1 = xl_parse_date( "11/7/97" );
     $date2 = xl_parse_date( "Friday 11 July 1997" );
@@ -855,10 +1211,7 @@ This function is used to initialise variables required by the L<Date::Manip> mod
 
 This function is a thin wrapper for the C<Date::Manip::Date_Init()> function. You can use C<Date_Init()>  directly if you wish. Refer to the C<Date::Manip> documentation for further information.
 
-    xl_parse_date_init( "TZ=MST", "DateFormat=US" );
-    $date1 = xl_parse_date( "11/7/97" );    # November 7th 1997
-
-    xl_parse_date_init( "TZ=GMT", "DateFormat=non-US" );
+    xl_parse_date_init( "DateFormat=non-US" );
     $date1 = xl_parse_date( "11/7/97" );    # July 11th 1997
 
 =head2 xl_decode_date_EU($string)
@@ -951,6 +1304,6 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-Copyright MM-MMXXIII, John McNamara.
+Copyright MM-MMXXIV, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.

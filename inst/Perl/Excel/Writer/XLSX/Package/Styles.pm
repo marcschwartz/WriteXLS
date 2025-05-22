@@ -6,7 +6,9 @@ package Excel::Writer::XLSX::Package::Styles;
 #
 # Used in conjunction with Excel::Writer::XLSX
 #
-# Copyright 2000-2023, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2024, John McNamara, jmcnamara@cpan.org
+#
+# SPDX-License-Identifier: Artistic-1.0-Perl OR GPL-1.0-or-later
 #
 # Documentation after __END__
 #
@@ -20,7 +22,7 @@ use Carp;
 use Excel::Writer::XLSX::Package::XMLwriter;
 
 our @ISA     = qw(Excel::Writer::XLSX::Package::XMLwriter);
-our $VERSION = '1.11';
+our $VERSION = '1.14';
 
 
 ###############################################################################
@@ -159,6 +161,12 @@ sub _get_palette_color {
     if ( $index =~ m/^#([0-9A-F]{6})$/i ) {
         return "FF" . uc( $1 );
     }
+
+    # Handle automatic color as a special case.
+    if ($index == 0x40) {
+        return "Automatic";
+    }
+
 
     # Adjust the colour index.
     $index -= 8;
@@ -375,7 +383,9 @@ sub _write_font {
     elsif ( my $color = $format->{_color} ) {
         $color = $self->_get_palette_color( $color );
 
-        $self->_write_color( 'rgb' => $color );
+        if ($color ne 'Automatic') {
+            $self->_write_color( 'rgb' => $color );
+        }
     }
     elsif ( !$dxf_format ) {
         $self->_write_color( 'theme' => 1 );
@@ -614,12 +624,17 @@ sub _write_fill {
 
     if ( $fg_color ) {
         $fg_color = $self->_get_palette_color( $fg_color );
-        $self->xml_empty_tag( 'fgColor', 'rgb' => $fg_color );
+        if ($fg_color ne 'Automatic') {
+            $self->xml_empty_tag( 'fgColor', 'rgb' => $fg_color );
+        }
     }
 
     if ( $bg_color ) {
         $bg_color = $self->_get_palette_color( $bg_color );
-        $self->xml_empty_tag( 'bgColor', 'rgb' => $bg_color );
+
+        if ($bg_color ne 'Automatic') {
+            $self->xml_empty_tag( 'bgColor', 'rgb' => $bg_color );
+        }
     }
     else {
         if ( !$dxf_format && $format->{_pattern} <= 1) {
@@ -775,13 +790,13 @@ sub _write_sub_border {
 
     );
 
-
     push @attributes, ( style => $border_styles[$style] );
 
     $self->xml_start_tag( $type, @attributes );
 
-    if ( $color ) {
+    if ( $color && $color ne "64" ) {
         $color = $self->_get_palette_color( $color );
+
         $self->xml_empty_tag( 'color', 'rgb' => $color );
     }
     else {
@@ -1196,13 +1211,13 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-(c) MM-MMXXIII, John McNamara.
+(c) MM-MMXXIV, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.
 
 =head1 LICENSE
 
-Either the Perl Artistic Licence L<http://dev.perl.org/licenses/artistic.html> or the GPL L<http://www.opensource.org/licenses/gpl-license.php>.
+Either the Perl Artistic Licence L<https://dev.perl.org/licenses/artistic.html> or the GNU General Public License v1.0 or later L<https://dev.perl.org/licenses/gpl1.html>.
 
 =head1 DISCLAIMER OF WARRANTY
 

@@ -7,7 +7,9 @@ package Excel::Writer::XLSX::Format;
 #
 # Used in conjunction with Excel::Writer::XLSX
 #
-# Copyright 2000-2023, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2024, John McNamara, jmcnamara@cpan.org
+#
+# SPDX-License-Identifier: Artistic-1.0-Perl OR GPL-1.0-or-later
 #
 # Documentation after __END__
 #
@@ -20,7 +22,7 @@ use Carp;
 
 
 our @ISA     = qw(Exporter);
-our $VERSION = '1.11';
+our $VERSION = '1.14';
 our $AUTOLOAD;
 
 
@@ -178,13 +180,16 @@ sub get_align_properties {
 
 
 
-    # Indent is only allowed for horizontal left, right and distributed. If it
-    # is defined for any other alignment or no alignment has been set then
-    # default to left alignment.
+    # Indent is only allowed for some alignment properties. If it is defined
+    # for any other alignment or no alignment has been set then default to
+    # left alignment.
     if (   $self->{_indent}
         && $self->{_text_h_align} != 1
         && $self->{_text_h_align} != 3
-        && $self->{_text_h_align} != 7 )
+        && $self->{_text_h_align} != 7
+        && $self->{_text_v_align} != 1
+        && $self->{_text_v_align} != 3
+        && $self->{_text_v_align} != 5 )
     {
         $self->{_text_h_align} = 1;
     }
@@ -216,8 +221,8 @@ sub get_align_properties {
     push @align, 'vertical', 'justify'     if $self->{_text_v_align} == 4;
     push @align, 'vertical', 'distributed' if $self->{_text_v_align} == 5;
 
-    push @align, 'indent',       $self->{_indent}   if $self->{_indent};
     push @align, 'textRotation', $self->{_rotation} if $self->{_rotation};
+    push @align, 'indent',       $self->{_indent}   if $self->{_indent};
 
     push @align, 'wrapText',     1 if $self->{_text_wrap};
     push @align, 'shrinkToFit',  1 if $self->{_shrink};
@@ -445,25 +450,26 @@ sub get_dxf_index {
 sub _get_color {
 
     my %colors = (
-        aqua    => 0x0F,
-        cyan    => 0x0F,
-        black   => 0x08,
-        blue    => 0x0C,
-        brown   => 0x10,
-        magenta => 0x0E,
-        fuchsia => 0x0E,
-        gray    => 0x17,
-        grey    => 0x17,
-        green   => 0x11,
-        lime    => 0x0B,
-        navy    => 0x12,
-        orange  => 0x35,
-        pink    => 0x21,
-        purple  => 0x14,
-        red     => 0x0A,
-        silver  => 0x16,
-        white   => 0x09,
-        yellow  => 0x0D,
+        aqua       => 0x0F,
+        cyan       => 0x0F,
+        black      => 0x08,
+        blue       => 0x0C,
+        brown      => 0x10,
+        magenta    => 0x0E,
+        fuchsia    => 0x0E,
+        gray       => 0x17,
+        grey       => 0x17,
+        green      => 0x11,
+        lime       => 0x0B,
+        navy       => 0x12,
+        orange     => 0x35,
+        pink       => 0x21,
+        purple     => 0x14,
+        red        => 0x0A,
+        silver     => 0x16,
+        white      => 0x09,
+        yellow     => 0x0D,
+        automatic  => 0x40,
     );
 
     # Return the default color if undef,
@@ -815,6 +821,6 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-(c) MM-MMXXIII, John McNamara.
+(c) MM-MMXXIV, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.

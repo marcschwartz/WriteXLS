@@ -7,7 +7,9 @@ package Excel::Writer::XLSX::Package::ContentTypes;
 #
 # Used in conjunction with Excel::Writer::XLSX
 #
-# Copyright 2000-2023, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2024, John McNamara, jmcnamara@cpan.org
+#
+# SPDX-License-Identifier: Artistic-1.0-Perl OR GPL-1.0-or-later
 #
 # Documentation after __END__
 #
@@ -21,7 +23,7 @@ use Carp;
 use Excel::Writer::XLSX::Package::XMLwriter;
 
 our @ISA     = qw(Excel::Writer::XLSX::Package::XMLwriter);
-our $VERSION = '1.11';
+our $VERSION = '1.14';
 
 
 ###############################################################################
@@ -350,6 +352,38 @@ sub _add_metadata {
 
 ###############################################################################
 #
+# _add_richvalue()
+#
+# Add the RichValue files to the ContentTypes overrides.
+#
+sub _add_richvalue {
+
+    my $self = shift;
+
+    $self->_add_override(
+        '/xl/richData/rdRichValueTypes.xml',
+        'application/vnd.ms-excel.rdrichvaluetypes+xml'
+    );
+
+    $self->_add_override(
+        '/xl/richData/rdrichvalue.xml',
+        'application/vnd.ms-excel.rdrichvalue+xml'
+    );
+
+    $self->_add_override(
+        '/xl/richData/rdrichvaluestructure.xml',
+        'application/vnd.ms-excel.rdrichvaluestructure+xml'
+    );
+
+    $self->_add_override(
+        '/xl/richData/richValueRel.xml',
+        'application/vnd.ms-excel.richvaluerel+xml'
+    );
+}
+
+
+###############################################################################
+#
 # Internal methods.
 #
 ###############################################################################
@@ -488,13 +522,13 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-(c) MM-MMXXIII, John McNamara.
+(c) MM-MMXXIV, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.
 
 =head1 LICENSE
 
-Either the Perl Artistic Licence L<http://dev.perl.org/licenses/artistic.html> or the GPL L<http://www.opensource.org/licenses/gpl-license.php>.
+Either the Perl Artistic Licence L<https://dev.perl.org/licenses/artistic.html> or the GNU General Public License v1.0 or later L<https://dev.perl.org/licenses/gpl1.html>.
 
 =head1 DISCLAIMER OF WARRANTY
 

@@ -6,7 +6,7 @@
 #
 # Write to an Excel binary file.
 #
-# Copyright 2015-2024, Marc Schwartz <marc_schwartz@me.com>
+# Copyright 2015-2025, Marc Schwartz <marc_schwartz@me.com>
 #
 # This software is distributed under the terms of the GNU General
 # Public License Version 2, June 1991.  

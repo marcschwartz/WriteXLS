@@ -6,7 +6,9 @@ package Excel::Writer::XLSX::Package::Relationships;
 #
 # Used in conjunction with Excel::Writer::XLSX
 #
-# Copyright 2000-2023, John McNamara, jmcnamara@cpan.org
+# Copyright 2000-2024, John McNamara, jmcnamara@cpan.org
+#
+# SPDX-License-Identifier: Artistic-1.0-Perl OR GPL-1.0-or-later
 #
 # Documentation after __END__
 #
@@ -20,7 +22,7 @@ use Carp;
 use Excel::Writer::XLSX::Package::XMLwriter;
 
 our @ISA     = qw(Excel::Writer::XLSX::Package::XMLwriter);
-our $VERSION = '1.11';
+our $VERSION = '1.14';
 
 our $schema_root     = 'http://schemas.openxmlformats.org';
 our $package_schema  = $schema_root . '/package/2006/relationships';
@@ -146,6 +148,42 @@ sub _add_worksheet_relationship {
 
 ###############################################################################
 #
+# _add_workbook_rich_values()
+#
+# Add relationships for RichValue files.
+#
+sub _add_rich_value_relationships {
+
+    my $self = shift;
+
+    push @{ $self->{_rels} },
+      [
+        'http://schemas.microsoft.com/office/2022/10/relationships/richValueRel',
+        'richData/richValueRel.xml'
+      ];
+
+    push @{ $self->{_rels} },
+      [
+        'http://schemas.microsoft.com/office/2017/06/relationships/rdRichValue',
+        'richData/rdrichvalue.xml'
+      ];
+
+    push @{ $self->{_rels} },
+      [
+        'http://schemas.microsoft.com/office/2017/06/relationships/rdRichValueStructure',
+        'richData/rdrichvaluestructure.xml'
+      ];
+
+    push @{ $self->{_rels} },
+      [
+        'http://schemas.microsoft.com/office/2017/06/relationships/rdRichValueTypes',
+        'richData/rdRichValueTypes.xml'
+      ];
+}
+
+
+###############################################################################
+#
 # Internal methods.
 #
 ###############################################################################
@@ -233,13 +271,13 @@ John McNamara jmcnamara@cpan.org
 
 =head1 COPYRIGHT
 
-(c) MM-MMXXIII, John McNamara.
+(c) MM-MMXXIV, John McNamara.
 
 All Rights Reserved. This module is free software. It may be used, redistributed and/or modified under the same terms as Perl itself.
 
 =head1 LICENSE
 
-Either the Perl Artistic Licence L<http://dev.perl.org/licenses/artistic.html> or the GPL L<http://www.opensource.org/licenses/gpl-license.php>.
+Either the Perl Artistic Licence L<https://dev.perl.org/licenses/artistic.html> or the GNU General Public License v1.0 or later L<https://dev.perl.org/licenses/gpl1.html>.
 
 =head1 DISCLAIMER OF WARRANTY
 
